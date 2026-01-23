@@ -51,6 +51,11 @@ struct ContentView: View {
         } message: {
             Text(viewModel.errorMessage)
         }
+        .alert("Complete", isPresented: $viewModel.showSuccess) {
+            Button("OK") { }
+        } message: {
+            Text(viewModel.successMessage)
+        }
         .overlay {
             if viewModel.isBuildingIndex || viewModel.isGenerating {
                 ZStack {
@@ -97,6 +102,8 @@ final class DiaryViewModel {
     // Error handling
     var showError = false
     var errorMessage = ""
+    var showSuccess = false
+    var successMessage = ""
 
     // Stored properties that sync with UserDefaults
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
@@ -312,30 +319,9 @@ final class DiaryViewModel {
                 }
 
                 generationProgress = "Generating \(index + 1)/\(totalCount): \(dateStr)"
-                let content: DiaryContent
-                switch aiProvider {
-                case .claudeCLI:
-                    content = try await claudeCLI.generateDiary(
-                        activity: activity,
-                        model: model
-                    )
-                case .claudeAPI:
-                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
-                        throw ClaudeAPIError.missingAPIKey
-                    }
-                    content = try await claudeAPI.generateDiary(
-                        activity: activity,
-                        apiKey: apiKey
-                    )
-                case .gemini:
-                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {
-                        throw GeminiAPIError.missingAPIKey
-                    }
-                    content = try await geminiAPI.generateDiary(
-                        activity: activity,
-                        apiKey: apiKey
-                    )
-                }
+
+                // Generate with retry
+                let content = try await generateDiaryWithRetry(activity: activity, dateStr: dateStr, index: index, totalCount: totalCount)
 
                 let diary = DiaryFormatter.format(content)
                 try await getStorage().save(diary)
@@ -356,13 +342,65 @@ final class DiaryViewModel {
             generationProgress = ""
 
             if generatedCount > 0 || skippedCount > 0 {
-                showErrorMessage("Generated \(generatedCount) diaries, skipped \(skippedCount)")
+                showSuccessMessage("Generated \(generatedCount) diaries, skipped \(skippedCount)")
             }
         } catch {
             isGenerating = false
             generationProgress = ""
             showErrorMessage(error.localizedDescription)
         }
+    }
+
+    private func generateDiaryWithRetry(
+        activity: DailyActivity,
+        dateStr: String,
+        index: Int,
+        totalCount: Int,
+        maxRetries: Int = 3
+    ) async throws -> DiaryContent {
+        var lastError: Error?
+
+        for attempt in 1...maxRetries {
+            do {
+                if attempt > 1 {
+                    generationProgress = "Retry \(attempt)/\(maxRetries) for \(index + 1)/\(totalCount): \(dateStr)"
+                    // Wait before retry (exponential backoff)
+                    try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+                }
+
+                switch aiProvider {
+                case .claudeCLI:
+                    return try await claudeCLI.generateDiary(
+                        activity: activity,
+                        model: model
+                    )
+                case .claudeAPI:
+                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
+                        throw ClaudeAPIError.missingAPIKey
+                    }
+                    return try await claudeAPI.generateDiary(
+                        activity: activity,
+                        apiKey: apiKey
+                    )
+                case .gemini:
+                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {
+                        throw GeminiAPIError.missingAPIKey
+                    }
+                    return try await geminiAPI.generateDiary(
+                        activity: activity,
+                        apiKey: apiKey
+                    )
+                }
+            } catch {
+                lastError = error
+                // Don't retry for non-network errors (like missing API key)
+                if (error as NSError).domain != NSURLErrorDomain {
+                    throw error
+                }
+            }
+        }
+
+        throw lastError ?? NSError(domain: "DiaryGeneration", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed after \(maxRetries) retries"])
     }
 
     // MARK: - Helpers
@@ -374,5 +412,10 @@ final class DiaryViewModel {
     private func showErrorMessage(_ message: String) {
         errorMessage = message
         showError = true
+    }
+
+    private func showSuccessMessage(_ message: String) {
+        successMessage = message
+        showSuccess = true
     }
 }
