@@ -233,11 +233,11 @@ struct ProjectBadge: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color.primary.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
     }
 }
