@@ -1,0 +1,21 @@
+# Build artifacts
+.build/
+build/
+DerivedData/
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+
+# generated diaries
+diaries/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea

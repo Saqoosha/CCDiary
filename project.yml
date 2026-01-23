@@ -1,0 +1,54 @@
+name: ccdiary
+options:
+  bundleIdPrefix: sh.saqoo
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.0"
+
+targets:
+  ccdiary:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/ccdiary
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - package: MarkdownUI
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: sh.saqoo.ccdiary
+      PRODUCT_NAME: ccdiary
+      INFOPLIST_FILE: Sources/ccdiary/Info.plist
+      GENERATE_INFOPLIST_FILE: false
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: G5G54TCH8W
+      ENABLE_HARDENED_RUNTIME: YES
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+    info:
+      path: Sources/ccdiary/Info.plist
+      properties:
+        CFBundleName: ccdiary
+        CFBundleDisplayName: ccdiary
+        CFBundleIdentifier: sh.saqoo.ccdiary
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundlePackageType: APPL
+        CFBundleExecutable: ccdiary
+        LSMinimumSystemVersion: "14.0"
+        NSHighResolutionCapable: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSHumanReadableCopyright: "© 2026 Saqoosha. MIT License."

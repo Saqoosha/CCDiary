@@ -1,0 +1,476 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		035EC21745E58B9EE6B618D0 /* ccdiaryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C91E785FBE4208A52F6FFD /* ccdiaryApp.swift */; };
+		04633843759140C2789EC24D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 65254769E5A017212B7AA136 /* Assets.xcassets */; };
+		048BD43E74CBE3B5B8B68E49 /* DayStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A79C8D61F1E89B74026DEAEF /* DayStatistics.swift */; };
+		0DF828C93170DB1DD77D32FD /* DiaryPromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A3CC2CA6DC8AE9549ED8F3 /* DiaryPromptBuilder.swift */; };
+		16EC8B85A68928E0EDB02884 /* ConversationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B80865C80BBA01DFE67487C0 /* ConversationService.swift */; };
+		2258541C3053ABD29F0600C4 /* GeminiAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDE61B6BB1DBBB3CC3C5EBC /* GeminiAPIService.swift */; };
+		344D0540356E7A602F6A5025 /* DiaryStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB059580E4F63503968B6226 /* DiaryStorage.swift */; };
+		4558C982544D971C42D1C5A0 /* ConversationEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AC7B38ACACF95127AA188C7 /* ConversationEntry.swift */; };
+		48C1CC2C5B6DE180F9A0C176 /* DiaryGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956E0674B4B509031D4646E4 /* DiaryGenerator.swift */; };
+		59AD67FB5791FF3A85342F01 /* AggregatorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2762306800800B4CDE03B9F /* AggregatorService.swift */; };
+		59F04C48829B0403385803DB /* DiaryContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75F1DF7FA9BB76C5F9FB7EF9 /* DiaryContent.swift */; };
+		601004891BF5F7FA2C70F9EB /* StatisticsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CEB78DEF12778D1DFFE512E /* StatisticsCache.swift */; };
+		6CCA5CBB9AF1FEB1F01EA796 /* HistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35EA6A29F77196959545665E /* HistoryEntry.swift */; };
+		761040A472B1AF0222ABD830 /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1765D843C6D9F0AE5DFCD223 /* AIProvider.swift */; };
+		869A1DF9B699F0E086F2AED6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3654FE6C0968B607F0AD8392 /* ContentView.swift */; };
+		87D0D20DFF53CAE4E0D5691D /* ProjectActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A32F36904F26310A769348 /* ProjectActivity.swift */; };
+		885D4B5465C3392624E665C0 /* CalendarGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E1A138AA1B5F7927E5C7A6B /* CalendarGridView.swift */; };
+		8EDE5E91C6B0A1D57F388698 /* DiaryFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047BBFC4AE4D61C8545AF99 /* DiaryFormatter.swift */; };
+		8EF47B8D543F7D8CC9740BD1 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F874CA288B7565520139B38 /* KeychainHelper.swift */; };
+		9E46AA2C87CA1B5EE03ADBE6 /* ParseResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5326EF996BA55A4E9E5C1900 /* ParseResult.swift */; };
+		AAA2718666002829ED9B7B48 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 4625552267FBC0079153F3AA /* MarkdownUI */; };
+		AF3C23E0D782AB8C06014FAB /* RightPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5501AA96D3730259DE9F205D /* RightPaneView.swift */; };
+		AF60FC549BFA86A65DB2243E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E0C94F1A0978FD8E4EDB41 /* SettingsView.swift */; };
+		B261BA3F54C996D72085BA44 /* ClaudeCLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */; };
+		C44F82B69B7A64A7C0D8FCD5 /* DiaryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA4144376F55B7E353430B37 /* DiaryEntry.swift */; };
+		CA4E0D521D0981FAFAE34911 /* ClaudeAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32ACA2EFCB9520BE02EB7104 /* ClaudeAPIService.swift */; };
+		CCB045877374E13D1FA05DB3 /* DateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21034842C08E389FDBC922E1 /* DateFormatting.swift */; };
+		F77F8D4230662FD450ADC62C /* HistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC529C410166EBA988E87F1A /* HistoryService.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		05E0C94F1A0978FD8E4EDB41 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		08A3CC2CA6DC8AE9549ED8F3 /* DiaryPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryPromptBuilder.swift; sourceTree = "<group>"; };
+		12C91E785FBE4208A52F6FFD /* ccdiaryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ccdiaryApp.swift; sourceTree = "<group>"; };
+		1765D843C6D9F0AE5DFCD223 /* AIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIProvider.swift; sourceTree = "<group>"; };
+		21034842C08E389FDBC922E1 /* DateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatting.swift; sourceTree = "<group>"; };
+		2E1A138AA1B5F7927E5C7A6B /* CalendarGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarGridView.swift; sourceTree = "<group>"; };
+		32ACA2EFCB9520BE02EB7104 /* ClaudeAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeAPIService.swift; sourceTree = "<group>"; };
+		35EA6A29F77196959545665E /* HistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryEntry.swift; sourceTree = "<group>"; };
+		3654FE6C0968B607F0AD8392 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3AC7B38ACACF95127AA188C7 /* ConversationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationEntry.swift; sourceTree = "<group>"; };
+		5326EF996BA55A4E9E5C1900 /* ParseResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParseResult.swift; sourceTree = "<group>"; };
+		5501AA96D3730259DE9F205D /* RightPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightPaneView.swift; sourceTree = "<group>"; };
+		55A32F36904F26310A769348 /* ProjectActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectActivity.swift; sourceTree = "<group>"; };
+		65254769E5A017212B7AA136 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6DDE61B6BB1DBBB3CC3C5EBC /* GeminiAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAPIService.swift; sourceTree = "<group>"; };
+		6F874CA288B7565520139B38 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		75D0C95B43EE624E843B8629 /* ccdiary.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ccdiary.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		75F1DF7FA9BB76C5F9FB7EF9 /* DiaryContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryContent.swift; sourceTree = "<group>"; };
+		956E0674B4B509031D4646E4 /* DiaryGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryGenerator.swift; sourceTree = "<group>"; };
+		9CEB78DEF12778D1DFFE512E /* StatisticsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsCache.swift; sourceTree = "<group>"; };
+		A2762306800800B4CDE03B9F /* AggregatorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregatorService.swift; sourceTree = "<group>"; };
+		A79C8D61F1E89B74026DEAEF /* DayStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStatistics.swift; sourceTree = "<group>"; };
+		AC529C410166EBA988E87F1A /* HistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryService.swift; sourceTree = "<group>"; };
+		B047BBFC4AE4D61C8545AF99 /* DiaryFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryFormatter.swift; sourceTree = "<group>"; };
+		B80865C80BBA01DFE67487C0 /* ConversationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationService.swift; sourceTree = "<group>"; };
+		CB059580E4F63503968B6226 /* DiaryStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryStorage.swift; sourceTree = "<group>"; };
+		DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIService.swift; sourceTree = "<group>"; };
+		EA4144376F55B7E353430B37 /* DiaryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryEntry.swift; sourceTree = "<group>"; };
+		F8399F84D7F53734869B10C2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3EC3BAC6936B34A30370059A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAA2718666002829ED9B7B48 /* MarkdownUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		103E6A31EBF8B6E58C37B4C9 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				1765D843C6D9F0AE5DFCD223 /* AIProvider.swift */,
+				3AC7B38ACACF95127AA188C7 /* ConversationEntry.swift */,
+				A79C8D61F1E89B74026DEAEF /* DayStatistics.swift */,
+				75F1DF7FA9BB76C5F9FB7EF9 /* DiaryContent.swift */,
+				EA4144376F55B7E353430B37 /* DiaryEntry.swift */,
+				35EA6A29F77196959545665E /* HistoryEntry.swift */,
+				55A32F36904F26310A769348 /* ProjectActivity.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		49A4B1167A647F0C9AB62610 = {
+			isa = PBXGroup;
+			children = (
+				711666ED62D0B55E7474D943 /* ccdiary */,
+				920FD75FD7F6D7AE37F65F90 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		711666ED62D0B55E7474D943 /* ccdiary */ = {
+			isa = PBXGroup;
+			children = (
+				65254769E5A017212B7AA136 /* Assets.xcassets */,
+				12C91E785FBE4208A52F6FFD /* ccdiaryApp.swift */,
+				F8399F84D7F53734869B10C2 /* Info.plist */,
+				103E6A31EBF8B6E58C37B4C9 /* Models */,
+				B102A16DD8A06641D0DE30AD /* Services */,
+				A0FCC1F5ED1E320470A1D423 /* Views */,
+			);
+			name = ccdiary;
+			path = Sources/ccdiary;
+			sourceTree = "<group>";
+		};
+		920FD75FD7F6D7AE37F65F90 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				75D0C95B43EE624E843B8629 /* ccdiary.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A0FCC1F5ED1E320470A1D423 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				2E1A138AA1B5F7927E5C7A6B /* CalendarGridView.swift */,
+				3654FE6C0968B607F0AD8392 /* ContentView.swift */,
+				5501AA96D3730259DE9F205D /* RightPaneView.swift */,
+				05E0C94F1A0978FD8E4EDB41 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B102A16DD8A06641D0DE30AD /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A2762306800800B4CDE03B9F /* AggregatorService.swift */,
+				32ACA2EFCB9520BE02EB7104 /* ClaudeAPIService.swift */,
+				DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */,
+				B80865C80BBA01DFE67487C0 /* ConversationService.swift */,
+				21034842C08E389FDBC922E1 /* DateFormatting.swift */,
+				B047BBFC4AE4D61C8545AF99 /* DiaryFormatter.swift */,
+				956E0674B4B509031D4646E4 /* DiaryGenerator.swift */,
+				08A3CC2CA6DC8AE9549ED8F3 /* DiaryPromptBuilder.swift */,
+				CB059580E4F63503968B6226 /* DiaryStorage.swift */,
+				6DDE61B6BB1DBBB3CC3C5EBC /* GeminiAPIService.swift */,
+				AC529C410166EBA988E87F1A /* HistoryService.swift */,
+				6F874CA288B7565520139B38 /* KeychainHelper.swift */,
+				5326EF996BA55A4E9E5C1900 /* ParseResult.swift */,
+				9CEB78DEF12778D1DFFE512E /* StatisticsCache.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6199546EDF1F01F76C1A29B8 /* ccdiary */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 43050C2F4F6B461E2C908333 /* Build configuration list for PBXNativeTarget "ccdiary" */;
+			buildPhases = (
+				6E40BBB8BD2DFCDE30306F46 /* Sources */,
+				A8BD4CD2457740F53145E4A3 /* Resources */,
+				3EC3BAC6936B34A30370059A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ccdiary;
+			packageProductDependencies = (
+				4625552267FBC0079153F3AA /* MarkdownUI */,
+			);
+			productName = ccdiary;
+			productReference = 75D0C95B43EE624E843B8629 /* ccdiary.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7FAFA3DB7F56FB09AECBDFA6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					6199546EDF1F01F76C1A29B8 = {
+						DevelopmentTeam = G5G54TCH8W;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 711B4D64F575D15CFB090850 /* Build configuration list for PBXProject "ccdiary" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 49A4B1167A647F0C9AB62610;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				681DBDC317FA4E5046FF17CE /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6199546EDF1F01F76C1A29B8 /* ccdiary */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A8BD4CD2457740F53145E4A3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				04633843759140C2789EC24D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6E40BBB8BD2DFCDE30306F46 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				761040A472B1AF0222ABD830 /* AIProvider.swift in Sources */,
+				59AD67FB5791FF3A85342F01 /* AggregatorService.swift in Sources */,
+				885D4B5465C3392624E665C0 /* CalendarGridView.swift in Sources */,
+				CA4E0D521D0981FAFAE34911 /* ClaudeAPIService.swift in Sources */,
+				B261BA3F54C996D72085BA44 /* ClaudeCLIService.swift in Sources */,
+				869A1DF9B699F0E086F2AED6 /* ContentView.swift in Sources */,
+				4558C982544D971C42D1C5A0 /* ConversationEntry.swift in Sources */,
+				16EC8B85A68928E0EDB02884 /* ConversationService.swift in Sources */,
+				CCB045877374E13D1FA05DB3 /* DateFormatting.swift in Sources */,
+				048BD43E74CBE3B5B8B68E49 /* DayStatistics.swift in Sources */,
+				59F04C48829B0403385803DB /* DiaryContent.swift in Sources */,
+				C44F82B69B7A64A7C0D8FCD5 /* DiaryEntry.swift in Sources */,
+				8EDE5E91C6B0A1D57F388698 /* DiaryFormatter.swift in Sources */,
+				48C1CC2C5B6DE180F9A0C176 /* DiaryGenerator.swift in Sources */,
+				0DF828C93170DB1DD77D32FD /* DiaryPromptBuilder.swift in Sources */,
+				344D0540356E7A602F6A5025 /* DiaryStorage.swift in Sources */,
+				2258541C3053ABD29F0600C4 /* GeminiAPIService.swift in Sources */,
+				6CCA5CBB9AF1FEB1F01EA796 /* HistoryEntry.swift in Sources */,
+				F77F8D4230662FD450ADC62C /* HistoryService.swift in Sources */,
+				8EF47B8D543F7D8CC9740BD1 /* KeychainHelper.swift in Sources */,
+				9E46AA2C87CA1B5EE03ADBE6 /* ParseResult.swift in Sources */,
+				87D0D20DFF53CAE4E0D5691D /* ProjectActivity.swift in Sources */,
+				AF3C23E0D782AB8C06014FAB /* RightPaneView.swift in Sources */,
+				AF60FC549BFA86A65DB2243E /* SettingsView.swift in Sources */,
+				601004891BF5F7FA2C70F9EB /* StatisticsCache.swift in Sources */,
+				035EC21745E58B9EE6B618D0 /* ccdiaryApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		04EA8CEE3FC5A861C50A60E1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = G5G54TCH8W;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/ccdiary/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.saqoo.ccdiary;
+				PRODUCT_NAME = ccdiary;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		52ED856D628CD64C5DA38217 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = G5G54TCH8W;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/ccdiary/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.saqoo.ccdiary;
+				PRODUCT_NAME = ccdiary;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		9F1F16329F450CD1EA92F660 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C9236CF184037BBF55B993E7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		43050C2F4F6B461E2C908333 /* Build configuration list for PBXNativeTarget "ccdiary" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				04EA8CEE3FC5A861C50A60E1 /* Debug */,
+				52ED856D628CD64C5DA38217 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		711B4D64F575D15CFB090850 /* Build configuration list for PBXProject "ccdiary" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C9236CF184037BBF55B993E7 /* Debug */,
+				9F1F16329F450CD1EA92F660 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		681DBDC317FA4E5046FF17CE /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4625552267FBC0079153F3AA /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 681DBDC317FA4E5046FF17CE /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7FAFA3DB7F56FB09AECBDFA6 /* Project object */;
+}
