@@ -325,12 +325,30 @@ actor ConversationService {
             return []
         }
 
-        // Pre-compute date prefix for fast string matching (YYYY-MM-DD)
         let datePrefix = DateFormatting.iso.string(from: start)
 
-        // Bulk read file content
-        let data = try Data(contentsOf: fileURL)
-        guard let text = String(data: data, encoding: .utf8) else {
+        // Get file size to decide strategy
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let fileSize = attrs[.size] as? UInt64 else {
+            return []
+        }
+
+        // For large files (>10MB), use binary search approach
+        if fileSize > 10_000_000 {
+            return Self.readEntriesFromLargeFile(fileURL, datePrefix: datePrefix, fileSize: fileSize)
+        }
+
+        // For smaller files, use optimized full scan
+        return Self.readEntriesFromSmallFile(fileURL, datePrefix: datePrefix)
+    }
+
+    /// Read entries from small files (<10MB) with lightweight decoding
+    private nonisolated static func readEntriesFromSmallFile(
+        _ fileURL: URL,
+        datePrefix: String
+    ) -> [ConversationEntry] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let text = String(data: data, encoding: .utf8) else {
             return []
         }
 
@@ -339,38 +357,110 @@ actor ConversationService {
             return []
         }
 
-        // Filter lines that match the date prefix first
-        let matchingLines = text.split(separator: "\n", omittingEmptySubsequences: true)
-            .filter { Self.lineMatchesDate(String($0), datePrefix: datePrefix) }
+        let decoder = JSONDecoder()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
 
-        // Process matching lines in parallel for better throughput
-        let entries: [ConversationEntry]
-        if matchingLines.count > 50 {
-            entries = await withTaskGroup(of: ConversationEntry?.self) { group in
-                for line in matchingLines {
-                    group.addTask {
-                        let lineData = Data(line.utf8)
-                        return try? JSONDecoder().decode(ConversationEntry.self, from: lineData)
+        var entries: [ConversationEntry] = []
+        for line in lines {
+            guard lineMatchesDate(String(line), datePrefix: datePrefix) else { continue }
+            let lineData = Data(line.utf8)
+            // Use lightweight decoder
+            if let light = try? decoder.decode(LightEntry.self, from: lineData),
+               let entry = light.toConversationEntry() {
+                entries.append(entry)
+            }
+        }
+
+        return entries
+    }
+
+    /// Read entries from large files (>10MB) with binary search
+    private nonisolated static func readEntriesFromLargeFile(
+        _ fileURL: URL,
+        datePrefix: String,
+        fileSize: UInt64
+    ) -> [ConversationEntry] {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        guard let fileHandle = FileHandle(forReadingAtPath: fileURL.path) else {
+            return []
+        }
+        defer { try? fileHandle.close() }
+
+        // Binary search to find approximate start of target date
+        let startOffset = binarySearchForDate(fileHandle: fileHandle, datePrefix: datePrefix, fileSize: fileSize)
+
+        // Seek to found position with safety margin
+        let safeStart = startOffset > 500_000 ? startOffset - 500_000 : 0
+        try? fileHandle.seek(toOffset: safeStart)
+
+        let decoder = JSONDecoder()
+        var entries: [ConversationEntry] = []
+
+        // Read in chunks from the found position
+        let chunkSize = 4 * 1024 * 1024 // 4MB chunks
+        var buffer = Data()
+        var foundAnyMatch = false
+        var noMatchChunks = 0
+        let maxNoMatchChunks = 3
+
+        while true {
+            guard let chunk = try? fileHandle.read(upToCount: chunkSize) else { break }
+            if chunk.isEmpty { break }
+
+            buffer.append(chunk)
+
+            guard let text = String(data: buffer, encoding: .utf8) else {
+                buffer = Data()
+                continue
+            }
+
+            let chunkHasDate = text.contains(datePrefix)
+
+            if !chunkHasDate {
+                if foundAnyMatch {
+                    noMatchChunks += 1
+                    if noMatchChunks >= maxNoMatchChunks {
+                        break
                     }
                 }
-
-                var results: [ConversationEntry] = []
-                for await entry in group {
-                    if let entry { results.append(entry) }
+                if let lastNewline = text.lastIndex(of: "\n") {
+                    let afterNewline = text.index(after: lastNewline)
+                    buffer = Data(text[afterNewline...].utf8)
+                } else {
+                    buffer = Data()
                 }
-                return results
+                continue
             }
-        } else {
-            let decoder = JSONDecoder()
-            entries = matchingLines.compactMap { line in
-                let lineData = Data(line.utf8)
-                return try? decoder.decode(ConversationEntry.self, from: lineData)
+
+            noMatchChunks = 0
+
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+            let completeLineCount = text.hasSuffix("\n") ? lines.count : max(0, lines.count - 1)
+
+            for i in 0..<completeLineCount {
+                let line = String(lines[i])
+
+                if lineMatchesDate(line, datePrefix: datePrefix) {
+                    foundAnyMatch = true
+                    let lineData = Data(line.utf8)
+                    if let light = try? decoder.decode(LightEntry.self, from: lineData),
+                       let entry = light.toConversationEntry() {
+                        entries.append(entry)
+                    }
+                }
+            }
+
+            if completeLineCount < lines.count {
+                buffer = Data(String(lines[completeLineCount]).utf8)
+            } else {
+                buffer = Data()
             }
         }
 
-        if entries.count > 0 {
-            logger.info("Parsed \(fileURL.lastPathComponent): \(entries.count) entries")
-        }
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let fileSizeMB = Double(fileSize) / 1_000_000.0
+        logger.notice("    entries(binary): \(elapsed, format: .fixed(precision: 1))ms, \(fileSizeMB, format: .fixed(precision: 2))MB, \(entries.count) entries - \(fileURL.lastPathComponent)")
 
         return entries
     }
@@ -378,6 +468,79 @@ actor ConversationService {
     /// Save date cache to disk (call periodically or on app termination)
     func saveDateCache() async {
         await dateIndex.saveToDiskIfNeeded()
+    }
+
+    /// Lightweight entry for conversation content - faster than full ConversationEntry
+    private struct LightEntry: Decodable {
+        let type: String
+        let message: LightMessage?
+        let timestamp: String
+        let isMeta: Bool?
+
+        struct LightMessage: Decodable {
+            let role: String
+            let content: LightContent
+
+            enum LightContent: Decodable {
+                case string(String)
+                case blocks([LightBlock])
+
+                init(from decoder: Decoder) throws {
+                    let container = try decoder.singleValueContainer()
+                    if let str = try? container.decode(String.self) {
+                        self = .string(str)
+                    } else if let blocks = try? container.decode([LightBlock].self) {
+                        self = .blocks(blocks)
+                    } else {
+                        self = .string("")
+                    }
+                }
+
+                var textContent: String? {
+                    switch self {
+                    case .string(let str):
+                        return str.isEmpty ? nil : str
+                    case .blocks(let blocks):
+                        let texts = blocks.compactMap { $0.text }
+                        return texts.isEmpty ? nil : texts.joined(separator: "\n")
+                    }
+                }
+            }
+
+            struct LightBlock: Decodable {
+                let type: String?
+                let text: String?
+            }
+        }
+
+        var isValid: Bool {
+            guard type == "user" || type == "assistant" else { return false }
+            guard isMeta != true else { return false }
+            guard message?.content.textContent != nil else { return false }
+            return true
+        }
+
+        func toConversationEntry() -> ConversationEntry? {
+            guard isValid else { return nil }
+            guard let msg = message, let text = msg.content.textContent else { return nil }
+
+            let role: MessageRole = msg.role == "user" ? .user : .assistant
+            let content = MessageContent.string(text)
+            let entryType: ConversationEntryType = msg.role == "user" ? .user : .assistant
+
+            return ConversationEntry(
+                type: entryType,
+                message: Message(role: role, content: content),
+                timestamp: timestamp,
+                sessionId: nil,
+                uuid: nil,
+                parentUuid: nil,
+                isSidechain: nil,
+                isMeta: isMeta,
+                cwd: nil,
+                version: nil
+            )
+        }
     }
 
     /// Lightweight entry for statistics - only decodes required fields

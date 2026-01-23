@@ -45,12 +45,13 @@ actor AggregatorService {
                         .map { $0.display }
                         .filter { !$0.isEmpty && !$0.hasPrefix("/") }
 
-                    // Find conversation files
-                    let conversationFiles = try await self.conversationService.findConversationFiles(projectPath: projectPath)
+                    // Find conversation files and filter by date index
+                    let allFiles = try await self.conversationService.findConversationFiles(projectPath: projectPath)
+                    let relevantFiles = await self.conversationService.getFilesForDate(dateString, projectFiles: allFiles)
 
-                    // Process files in parallel
+                    // Process only relevant files in parallel
                     let fileResults = try await withThrowingTaskGroup(of: [(message: ConversationMessage, originalLength: Int)].self) { fileGroup in
-                        for file in conversationFiles {
+                        for file in relevantFiles {
                             fileGroup.addTask {
                                 // Use optimized date-range reading
                                 let dayEntries = try await self.conversationService.readConversationForDateRange(from: file, start: startOfDay, end: endOfDay)

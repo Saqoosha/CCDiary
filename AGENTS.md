@@ -105,20 +105,47 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
 
 ## Performance Optimizations
 
-### Binary Search for Large Files
+### Diary Generation (aggregateForDate)
 
-`ConversationService` uses binary search for JSONL files >10MB to quickly find date ranges:
+Multiple optimizations reduce diary generation time from ~14s to ~2s:
 
-- **Before**: 4090ms for dates with large files (87MB)
-- **After**: ~480ms (8x faster)
+1. **Date Index Filtering**
+   - Only processes files that contain the target date
+   - Reduces file count by ~87% (e.g., 135 → 17 files)
 
-Key implementation details:
-- Files >10MB use `parseStatsFromLargeFile()` with binary search
-- Files ≤10MB use full scan (fast enough)
-- Binary search reads 1MB chunks to handle very long lines (some >256KB)
-- Position 0 has special handling to read first line correctly
+2. **Binary Search for Large Files**
+   - Files >10MB use binary search to find date range quickly
+   - Avoids scanning entire file
+
+3. **Lightweight JSON Decoding**
+   - `LightEntry` struct decodes only required fields (type, message, timestamp)
+   - Skips unnecessary fields (sessionId, uuid, cwd, version, etc.)
+   - ~3x faster than full `ConversationEntry` decoding
+
+**Benchmark results (2026-01-22, 10 projects):**
+- Original: 14,062ms
+- With date index: 5,431ms (2.6x faster)
+- With all optimizations: 1,702ms (8.3x faster)
+
+### Statistics (getQuickStatistics)
+
+- Uses `StatsEntry` lightweight decoder (even lighter than `LightEntry`)
+- Binary search for large files
+- Results cached for past dates (~0.3ms on cache hit)
 
 ### Caches
 
 - **Date Index** (`~/Library/Caches/ccdiary/date_index_v2.json`): Maps dates to files containing that date
 - **Statistics Cache** (`~/Library/Caches/ccdiary/statistics/`): Cached stats for past dates
+
+## Benchmark Tool
+
+A CLI benchmark tool is available for performance testing:
+
+```bash
+# Build
+xcodebuild -scheme benchmark -configuration Release -derivedDataPath build build
+
+# Run
+./build/Build/Products/Release/benchmark 2026-01-22
+```

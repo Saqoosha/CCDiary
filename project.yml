@@ -52,3 +52,14 @@ targets:
         NSHighResolutionCapable: true
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "© 2026 Saqoosha. MIT License."
+
+  benchmark:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Tools/Benchmark
+      - path: Sources/ccdiary/Services
+      - path: Sources/ccdiary/Models
+    settings:
+      PRODUCT_NAME: benchmark
+      PRODUCT_MODULE_NAME: BenchmarkTool
