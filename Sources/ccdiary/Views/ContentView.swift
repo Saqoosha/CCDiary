@@ -1,5 +1,18 @@
 import SwiftUI
 
+// MARK: - FocusedValue for menu access
+
+struct DiaryViewModelKey: FocusedValueKey {
+    typealias Value = DiaryViewModel
+}
+
+extension FocusedValues {
+    var diaryViewModel: DiaryViewModel? {
+        get { self[DiaryViewModelKey.self] }
+        set { self[DiaryViewModelKey.self] = newValue }
+    }
+}
+
 struct ContentView: View {
     @State private var viewModel = DiaryViewModel()
 
@@ -19,21 +32,12 @@ struct ContentView: View {
         .navigationTitle("ccdiary")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task {
-                        await viewModel.generateAllDiaries()
-                    }
-                } label: {
-                    Label("Generate All", systemImage: "sparkles.rectangle.stack")
-                }
-                .disabled(viewModel.isGenerating)
-                .help("Generate diaries for all dates with activity")
-
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
         }
+        .focusedSceneValue(\.diaryViewModel, viewModel)
         .task {
             await viewModel.loadInitialData()
         }
@@ -48,13 +52,13 @@ struct ContentView: View {
             Text(viewModel.errorMessage)
         }
         .overlay {
-            if viewModel.isBuildingIndex {
+            if viewModel.isBuildingIndex || viewModel.isGenerating {
                 ZStack {
                     Color.black.opacity(0.3)
                     VStack(spacing: 12) {
                         ProgressView()
                             .scaleEffect(1.2)
-                        Text(viewModel.indexBuildProgress)
+                        Text(viewModel.isBuildingIndex ? viewModel.indexBuildProgress : viewModel.generationProgress)
                             .font(.headline)
                     }
                     .padding(24)

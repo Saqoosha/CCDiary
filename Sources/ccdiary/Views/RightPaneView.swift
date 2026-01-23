@@ -16,8 +16,6 @@ struct RightPaneView: View {
             // Main content
             if viewModel.isLoadingInitial || viewModel.isLoadingDate {
                 loadingView
-            } else if viewModel.isGenerating {
-                generatingView
             } else {
                 mainScrollContent
             }
@@ -216,29 +214,6 @@ struct RightPaneView: View {
     }
 
     // MARK: - Generating View
-
-    private var generatingView: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            ProgressView()
-                .controlSize(.regular)
-
-            VStack(spacing: 4) {
-                Text("Generating...")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Text(viewModel.generationProgress)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 
     // MARK: - Helpers
 
