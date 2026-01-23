@@ -2,6 +2,8 @@
 
 A macOS app that automatically generates work diaries in Japanese from Claude Code conversation history.
 
+![ccdiary screenshot](images/screenshot-v2.png)
+
 ## Features
 
 - Automatically collects Claude Code conversation history
