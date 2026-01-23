@@ -23,6 +23,7 @@
 		4CC352230B3BF0A812DCA137 /* ClaudeAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32ACA2EFCB9520BE02EB7104 /* ClaudeAPIService.swift */; };
 		520F04D11D99AC0F7E55DF4E /* DiaryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA4144376F55B7E353430B37 /* DiaryEntry.swift */; };
 		5387D02C2DADC017A2AF7467 /* MarkdownWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5314682DE84B5E01CDC701D /* MarkdownWebView.swift */; };
+		54732DD090516BFC484F3091 /* icon.json in Resources */ = {isa = PBXBuildFile; fileRef = 0092351C6490D9562450F1CD /* icon.json */; };
 		55BF7DC57D6791779110A35C /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1765D843C6D9F0AE5DFCD223 /* AIProvider.swift */; };
 		59AD67FB5791FF3A85342F01 /* AggregatorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2762306800800B4CDE03B9F /* AggregatorService.swift */; };
 		59F04C48829B0403385803DB /* DiaryContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75F1DF7FA9BB76C5F9FB7EF9 /* DiaryContent.swift */; };
@@ -42,6 +43,7 @@
 		8EDE5E91C6B0A1D57F388698 /* DiaryFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B047BBFC4AE4D61C8545AF99 /* DiaryFormatter.swift */; };
 		8EF47B8D543F7D8CC9740BD1 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F874CA288B7565520139B38 /* KeychainHelper.swift */; };
 		930C13900B3A2FB0083768A5 /* github-markdown.css in Resources */ = {isa = PBXBuildFile; fileRef = 0277523CB7D2CF3BB3738127 /* github-markdown.css */; };
+		93D93E6AEE74F32CA7340761 /* appicon_foreground.png in Resources */ = {isa = PBXBuildFile; fileRef = 030B10760AF7D23B95B11BAF /* appicon_foreground.png */; };
 		97993339C03807A4DB324175 /* ClaudeCLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */; };
 		98A8BCC020D02A7720B32FF0 /* marked.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 4A0EA64395D76BDF7EC0E17D /* marked.min.js */; };
 		9E46AA2C87CA1B5EE03ADBE6 /* ParseResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5326EF996BA55A4E9E5C1900 /* ParseResult.swift */; };
@@ -62,7 +64,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0092351C6490D9562450F1CD /* icon.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = icon.json; sourceTree = "<group>"; };
 		0277523CB7D2CF3BB3738127 /* github-markdown.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-markdown.css"; sourceTree = "<group>"; };
+		030B10760AF7D23B95B11BAF /* appicon_foreground.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = appicon_foreground.png; sourceTree = "<group>"; };
 		05E0C94F1A0978FD8E4EDB41 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		08A3CC2CA6DC8AE9549ED8F3 /* DiaryPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryPromptBuilder.swift; sourceTree = "<group>"; };
 		12C91E785FBE4208A52F6FFD /* ccdiaryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ccdiaryApp.swift; sourceTree = "<group>"; };
@@ -123,6 +127,15 @@
 			path = Tools/Benchmark;
 			sourceTree = "<group>";
 		};
+		3F92FBAFDA8886CBFEC20CCB /* AppIcon.icon */ = {
+			isa = PBXGroup;
+			children = (
+				0092351C6490D9562450F1CD /* icon.json */,
+				6AF073336A9FD0B3FE8D14CB /* Assets */,
+			);
+			path = AppIcon.icon;
+			sourceTree = "<group>";
+		};
 		49A4B1167A647F0C9AB62610 = {
 			isa = PBXGroup;
 			children = (
@@ -134,12 +147,21 @@
 			);
 			sourceTree = "<group>";
 		};
+		6AF073336A9FD0B3FE8D14CB /* Assets */ = {
+			isa = PBXGroup;
+			children = (
+				030B10760AF7D23B95B11BAF /* appicon_foreground.png */,
+			);
+			path = Assets;
+			sourceTree = "<group>";
+		};
 		711666ED62D0B55E7474D943 /* ccdiary */ = {
 			isa = PBXGroup;
 			children = (
 				65254769E5A017212B7AA136 /* Assets.xcassets */,
 				12C91E785FBE4208A52F6FFD /* ccdiaryApp.swift */,
 				F8399F84D7F53734869B10C2 /* Info.plist */,
+				3F92FBAFDA8886CBFEC20CCB /* AppIcon.icon */,
 				103E6A31EBF8B6E58C37B4C9 /* Models */,
 				D4DB8244F883B9850C7320EB /* Resources */,
 				B102A16DD8A06641D0DE30AD /* Services */,
@@ -280,7 +302,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				04633843759140C2789EC24D /* Assets.xcassets in Resources */,
+				93D93E6AEE74F32CA7340761 /* appicon_foreground.png in Resources */,
 				930C13900B3A2FB0083768A5 /* github-markdown.css in Resources */,
+				54732DD090516BFC484F3091 /* icon.json in Resources */,
 				98A8BCC020D02A7720B32FF0 /* marked.min.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -445,7 +469,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -518,7 +542,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
