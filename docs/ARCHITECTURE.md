@@ -52,7 +52,7 @@ ccdiary is a macOS app that analyzes Claude Code conversation history and genera
 │  │ ...       │    │  │ [Project1] 14 msgs, 2h 15m       │  │
 │  │ [23]      │    │  │ [Project2]  8 msgs, 1h 30m       │  │
 │  │ ...       │    │  ├───────────────────────────────────┤  │
-│  └───────────┘    │  │ Diary Markdown (MarkdownUI)       │  │
+│  └───────────┘    │  │ Diary Markdown (WKWebView)        │  │
 │                   │  │                                   │  │
 │                   │  │ [Generate] or [Copy] button       │  │
 │                   │  └───────────────────────────────────┘  │
@@ -387,7 +387,8 @@ To manage API costs:
 
 ## Dependencies
 
-- **MarkdownUI** (v2.4.0+) - Markdown rendering in SwiftUI
+- **[marked](https://github.com/markedjs/marked)** (v15.0.12) - Markdown parser (bundled)
+- **[github-markdown-css](https://github.com/sindresorhus/github-markdown-css)** - GitHub Markdown styles (bundled)
 
 ## Error Handling
 

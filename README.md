@@ -123,6 +123,13 @@ Resolved authentication issues and prepared for a stable release.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
+## Third Party Licenses
+
+This project uses the following open-source libraries:
+
+- **[marked](https://github.com/markedjs/marked)** - A markdown parser and compiler. MIT License, Copyright (c) 2011-2025, Christopher Jeffrey.
+- **[github-markdown-css](https://github.com/sindresorhus/github-markdown-css)** - GitHub Markdown styles. MIT License, Copyright (c) Sindre Sorhus.
+
 ## License
 
 MIT

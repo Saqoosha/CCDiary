@@ -13,11 +13,6 @@ settings:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
-packages:
-  MarkdownUI:
-    url: https://github.com/gonzalezreal/swift-markdown-ui
-    from: "2.4.0"
-
 targets:
   ccdiary:
     type: application
@@ -26,8 +21,6 @@ targets:
       - path: Sources/ccdiary
         excludes:
           - "**/.DS_Store"
-    dependencies:
-      - package: MarkdownUI
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: sh.saqoo.ccdiary
       PRODUCT_NAME: ccdiary

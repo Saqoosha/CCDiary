@@ -1,5 +1,4 @@
 import SwiftUI
-import MarkdownUI
 
 /// Unified right pane: stats header + projects + diary
 struct RightPaneView: View {
@@ -61,19 +60,17 @@ struct RightPaneView: View {
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.6))
     }
 
-    // MARK: - Main Scroll Content
+    // MARK: - Main Content
 
     private var mainScrollContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Projects section
-                if let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
-                    projectsSection(projects: stats.projects)
-                }
-
-                // Diary section
-                diarySection
+        VStack(alignment: .leading, spacing: 0) {
+            // Projects section (fixed height, no scroll)
+            if let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
+                projectsSection(projects: stats.projects)
             }
+
+            // Diary section (fills remaining space, WKWebView handles scroll)
+            diarySection
         }
     }
 
@@ -95,43 +92,9 @@ struct RightPaneView: View {
     @ViewBuilder
     private var diarySection: some View {
         if let diary = viewModel.currentDiary {
-            // Diary content
-            VStack(alignment: .leading, spacing: 0) {
-                Markdown(diary.markdown)
-                    .markdownTheme(.gitHub)
-                    .markdownTextStyle {
-                        FontSize(15)
-                    }
-                    .markdownBlockStyle(\.heading1) { config in
-                        config.label
-                            .markdownTextStyle {
-                                FontSize(22)
-                                FontWeight(.bold)
-                            }
-                            .padding(.bottom, 8)
-                    }
-                    .markdownBlockStyle(\.heading2) { config in
-                        config.label
-                            .markdownTextStyle {
-                                FontSize(18)
-                                FontWeight(.semibold)
-                            }
-                            .padding(.top, 16)
-                            .padding(.bottom, 6)
-                    }
-                    .markdownBlockStyle(\.heading3) { config in
-                        config.label
-                            .markdownTextStyle {
-                                FontSize(16)
-                                FontWeight(.semibold)
-                            }
-                            .padding(.top, 12)
-                            .padding(.bottom, 4)
-                    }
-                    .textSelection(.enabled)
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            // Diary content (WKWebView handles its own scrolling)
+            MarkdownWebView(markdown: diary.markdown)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.currentDayStatistics != nil {
             // Has activity but no diary
             generatePrompt
