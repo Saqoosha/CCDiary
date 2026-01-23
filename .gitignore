@@ -19,3 +19,6 @@ diaries/
 
 # IDE
 .idea
+
+# Serena MCP
+.serena/

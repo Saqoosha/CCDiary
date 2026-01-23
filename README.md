@@ -1,29 +1,29 @@
 # ccdiary
 
-Claude Code の会話履歴から自動で日本語の作業日記を生成する macOS アプリ。
+A macOS app that automatically generates work diaries in Japanese from Claude Code conversation history.
 
 ## Features
 
-- Claude Code の会話履歴を自動収集
-- カレンダー中心の UI（180日前〜90日後）
-- プロジェクト別に活動を整理
-- 複数の AI プロバイダー対応（Claude CLI / Claude API / Gemini API）
-- 大容量ファイル対応（87MB+ のログファイルも高速処理）
-- Markdown 形式で保存・表示
+- Automatically collects Claude Code conversation history
+- Calendar-centric UI (dynamically shows from earliest activity to end of current month)
+- Organizes activities by project
+- Multiple AI provider support (Claude CLI / Claude API / Gemini API)
+- Handles large files efficiently (87MB+ log files with binary search optimization)
+- Saves and displays diaries in Markdown format
 
 ## Data Sources
 
-Claude Code が記録する以下のファイルを読み取る:
+Reads the following files recorded by Claude Code:
 
-- `~/.claude/history.jsonl` - 全プロジェクトの入力履歴
-- `~/.claude/projects/{encoded-path}/*.jsonl` - プロジェクト別の詳細な会話ログ
+- `~/.claude/history.jsonl` - Input history across all projects
+- `~/.claude/projects/{encoded-path}/*.jsonl` - Detailed conversation logs per project
 
 ## Requirements
 
 - macOS 14.0+
-- Xcode 15+ (ビルド用)
-- いずれかの API キー:
-  - Claude Code CLI（インストール済みであれば追加設定不要）
+- Xcode 15+ (for building)
+- One of the following:
+  - Claude Code CLI (no additional setup required if already installed)
   - Anthropic API Key
   - Google Gemini API Key
 
@@ -46,7 +46,7 @@ xcodebuild -scheme ccdiary -configuration Debug -derivedDataPath build build
 open build/Build/Products/Debug/ccdiary.app
 ```
 
-または Xcode で直接開く:
+Or open directly in Xcode:
 
 ```bash
 open Package.swift
@@ -56,36 +56,36 @@ open Package.swift
 
 ### Calendar View
 
-- 180日前から90日後までの連続カレンダー
-- 活動がある日にはドットが表示される
-- 日記が生成済みの日はチェックマークが表示される
-- 今日にスクロール
+- Continuous scrollable calendar from earliest activity to end of current month
+- Days with activity are marked with a dot
+- Days with generated diaries show a checkmark
+- Auto-scrolls to today on launch
 
 ### Day View
 
-- 選択した日の統計（プロジェクト数、セッション数、メッセージ数、文字数）
-- プロジェクト別のアクティビティ
-- 生成済みの日記を表示
-- Copy ボタンでクリップボードにコピー
+- Statistics for selected day (projects, sessions, messages, characters)
+- Activity breakdown by project
+- Displays generated diary
+- Copy button to clipboard
 
 ### Diary Generation
 
-- Generate ボタンで日記を生成
-- Claude Sonnet API を使用
-- 進捗インジケータ付き
+- Generate diary with the Generate button
+- Uses Claude Sonnet API
+- Shows progress indicator
 
 ### Settings
 
-- **AI Provider**: 使用する AI プロバイダー
-  - Claude CLI（API キー不要、Claude Code がインストールされていれば使用可能）
-  - Claude API（Anthropic API キーが必要）
-  - Gemini API（Google AI API キーが必要）
-- **Model**: 使用するモデル（Claude CLI の場合: sonnet/opus/haiku）
-- **Diaries Directory**: 日記の保存先（デフォルト: `~/Desktop/ccdiary/diaries`）
+- **AI Provider**: Choose your preferred AI provider
+  - Claude CLI (no API key required if Claude Code is installed)
+  - Claude API (requires Anthropic API key)
+  - Gemini API (requires Google AI API key)
+- **Model**: Model to use (for Claude CLI: sonnet/opus/haiku)
+- **Diaries Directory**: Where to save diaries (default: `~/Desktop/ccdiary/diaries`)
 
 ## Output
 
-日記は Markdown 形式で保存される:
+Diaries are saved in Markdown format:
 
 ```
 diaries/
@@ -97,31 +97,31 @@ diaries/
 ### Sample Output
 
 ```markdown
-## 概要
+## Summary
 
-本日は3つのプロジェクトで作業を行い、主にAPIの改善とバグ修正に取り組んだ。
+Today I worked on 3 projects, mainly focusing on API improvements and bug fixes.
 
-## プロジェクト別
+## By Project
 
 ### my-project
 
-- 認証機能のバグを修正
-- ユーザー一覧APIにページネーションを追加
-- テストカバレッジを向上
+- Fixed authentication bug
+- Added pagination to user list API
+- Improved test coverage
 
 ### another-project
 
-- 新しいコンポーネントを作成
-- スタイリングの調整
+- Created new component
+- Adjusted styling
 
-## 本日のハイライト
+## Today's Highlight
 
-認証周りの問題を解決し、安定したリリースの準備が整った。
+Resolved authentication issues and prepared for a stable release.
 ```
 
 ## Architecture
 
-詳細なアーキテクチャについては [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照。
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
 ## License
 

@@ -64,7 +64,7 @@ ccdiary is a macOS app that analyzes Claude Code conversation history and genera
 | View | File | Description |
 |------|------|-------------|
 | `ContentView` | Views/ContentView.swift | Main view with HSplitView layout |
-| `CalendarGridView` | Views/CalendarGridView.swift | Scrollable calendar (180 days back, 90 days forward) |
+| `CalendarGridView` | Views/CalendarGridView.swift | Scrollable calendar (from earliest activity to end of current month) |
 | `RightPaneView` | Views/RightPaneView.swift | Header + projects + diary display |
 | `SettingsView` | Views/SettingsView.swift | API key, model, directory settings |
 
@@ -90,7 +90,7 @@ final class DiaryViewModel {
     var isGenerating: Bool
 
     // Settings (synced with UserDefaults)
-    var apiKey: String
+    var aiProvider: AIProvider
     var model: String
     var diariesDirectoryPath: String
 }
@@ -316,22 +316,31 @@ ccdiary/
 └── Sources/ccdiary/
     ├── ccdiaryApp.swift           # App entry point
     ├── Models/
-    │   ├── HistoryEntry.swift
+    │   ├── AIProvider.swift
     │   ├── ConversationEntry.swift
     │   ├── DayStatistics.swift
-    │   ├── ProjectActivity.swift
-    │   └── DiaryEntry.swift
+    │   ├── DiaryContent.swift
+    │   ├── DiaryEntry.swift
+    │   ├── HistoryEntry.swift
+    │   └── ProjectActivity.swift
     ├── Services/
-    │   ├── HistoryService.swift
-    │   ├── ConversationService.swift
     │   ├── AggregatorService.swift
-    │   ├── ClaudeCLIService.swift
     │   ├── ClaudeAPIService.swift
+    │   ├── ClaudeCLIService.swift
+    │   ├── ConversationService.swift
+    │   ├── DateFormatting.swift
+    │   ├── DiaryFormatter.swift
+    │   ├── DiaryGenerator.swift
+    │   ├── DiaryPromptBuilder.swift
+    │   ├── DiaryStorage.swift
     │   ├── GeminiAPIService.swift
-    │   └── DiaryStorage.swift
+    │   ├── HistoryService.swift
+    │   ├── KeychainHelper.swift
+    │   ├── ParseResult.swift
+    │   └── StatisticsCache.swift
     └── Views/
-        ├── ContentView.swift
         ├── CalendarGridView.swift
+        ├── ContentView.swift
         ├── RightPaneView.swift
         └── SettingsView.swift
 ```
