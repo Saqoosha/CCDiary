@@ -1,9 +1,14 @@
 import SwiftUI
+import AppKit
 
 /// Unified right pane: stats header + projects + diary
 struct RightPaneView: View {
     @Bindable var viewModel: DiaryViewModel
     @State private var showCopied = false
+
+    // App icons (loaded once)
+    private let claudeIcon = AppIconHelper.icon(for: "Claude")
+    private let cursorIcon = AppIconHelper.icon(for: "Cursor")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,12 +38,32 @@ struct RightPaneView: View {
 
             Spacer()
 
-            // Inline stats (combined from all sources)
+            // Inline stats (split by source)
             if let stats = viewModel.currentDayStatistics {
-                HStack(spacing: 12) {
-                    StatBadge(value: stats.projectCount, label: "projects")
-                    StatBadge(value: stats.sessionCount, label: "sessions")
-                    StatBadge(value: stats.messageCount, label: "msgs")
+                HStack(spacing: 16) {
+                    // Claude Code stats
+                    if stats.ccProjectCount > 0 {
+                        HStack(spacing: 8) {
+                            Image(nsImage: claudeIcon)
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                            StatBadge(value: stats.ccProjectCount, label: "proj")
+                            StatBadge(value: stats.ccSessionCount, label: "sess")
+                            StatBadge(value: stats.ccMessageCount, label: "msgs")
+                        }
+                    }
+
+                    // Cursor stats
+                    if stats.cursorProjectCount > 0 {
+                        HStack(spacing: 8) {
+                            Image(nsImage: cursorIcon)
+                                .resizable()
+                                .frame(width: 20, height: 20)
+                            StatBadge(value: stats.cursorProjectCount, label: "proj")
+                            StatBadge(value: stats.cursorSessionCount, label: "sess")
+                            StatBadge(value: stats.cursorMessageCount, label: "msgs")
+                        }
+                    }
                 }
             }
 
@@ -315,3 +340,24 @@ struct StatBadge: View {
     }
 }
 
+// MARK: - App Icon Helper
+
+enum AppIconHelper {
+    /// Get app icon from /Applications or fallback to SF Symbol
+    static func icon(for appName: String) -> NSImage {
+        let paths = [
+            "/Applications/\(appName).app",
+            "/System/Applications/\(appName).app",
+            NSHomeDirectory() + "/Applications/\(appName).app"
+        ]
+
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                return NSWorkspace.shared.icon(forFile: path)
+            }
+        }
+
+        // Fallback to generic app icon
+        return NSWorkspace.shared.icon(for: .applicationBundle)
+    }
+}
