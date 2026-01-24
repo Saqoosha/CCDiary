@@ -30,6 +30,11 @@ actor StatisticsCache {
         } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             // File not found is expected - no need to log
             return nil
+        } catch is DecodingError {
+            // Schema changed - delete old cache file so it gets regenerated
+            logger.notice("Deleting incompatible cache for \(dateString)")
+            try? fileManager.removeItem(at: fileURL)
+            return nil
         } catch {
             logger.warning("Failed to read cache for \(dateString): \(error.localizedDescription)")
             return nil

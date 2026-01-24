@@ -163,10 +163,15 @@ actor CursorService {
                 continue
             }
 
-            // Convert file:// URL to path
+            // Convert file:// URL to path (handles file://localhost/... and file:///...)
             let projectPath: String
-            if folderURL.hasPrefix("file://") {
-                projectPath = String(folderURL.dropFirst(7)).removingPercentEncoding ?? folderURL
+            if let url = URL(string: folderURL), url.isFileURL {
+                projectPath = url.path
+            } else if folderURL.hasPrefix("file://") {
+                // Fallback for malformed URLs
+                let stripped = folderURL.replacingOccurrences(of: "file://localhost", with: "")
+                    .replacingOccurrences(of: "file://", with: "")
+                projectPath = stripped.removingPercentEncoding ?? stripped
             } else {
                 projectPath = folderURL
             }

@@ -46,6 +46,7 @@ struct RightPaneView: View {
                         HStack(spacing: 8) {
                             Image(nsImage: claudeIcon)
                                 .resizable()
+                                .aspectRatio(contentMode: .fit)
                                 .frame(width: 20, height: 20)
                             StatBadge(value: stats.ccProjectCount, label: "proj")
                             StatBadge(value: stats.ccSessionCount, label: "sess")
@@ -58,6 +59,7 @@ struct RightPaneView: View {
                         HStack(spacing: 8) {
                             Image(nsImage: cursorIcon)
                                 .resizable()
+                                .aspectRatio(contentMode: .fit)
                                 .frame(width: 20, height: 20)
                             StatBadge(value: stats.cursorProjectCount, label: "proj")
                             StatBadge(value: stats.cursorSessionCount, label: "sess")
