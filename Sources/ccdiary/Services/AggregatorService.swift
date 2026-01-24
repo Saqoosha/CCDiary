@@ -14,6 +14,7 @@ actor AggregatorService {
     private let historyService = HistoryService()
     private let conversationService = ConversationService()
     private let statisticsCache = StatisticsCache()
+    private let cursorService = CursorService()
 
     /// Aggregate activity data for a specific date
     /// Uses parallel processing for better performance
@@ -158,17 +159,64 @@ actor AggregatorService {
             return collected
         }
 
-        // Sort projects by first activity time
-        var sortedProjects = projects
-        sortedProjects.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
+        // Get Cursor activity for this date
+        var cursorProjects: [ProjectActivity] = []
+        if let cursorActivities = try? await cursorService.getActivityForDate(date) {
+            for activity in cursorActivities {
+                // Convert CursorChatMessage to ConversationMessage
+                let conversations = activity.messages.map { msg in
+                    ConversationMessage(
+                        role: msg.role,
+                        content: msg.content.count <= maxContentLength
+                            ? msg.content
+                            : String(msg.content.prefix(maxContentLength)) + "...",
+                        timestamp: msg.timestamp ?? activity.timeRangeStart
+                    )
+                }
+
+                // Limit messages
+                let limitedConversations: [ConversationMessage]
+                if conversations.count <= maxMessagesPerProject {
+                    limitedConversations = conversations
+                } else {
+                    let half = maxMessagesPerProject / 2
+                    limitedConversations = Array(conversations.prefix(half)) + Array(conversations.suffix(half))
+                }
+
+                let stats = ProjectStats(
+                    totalMessages: conversations.count,
+                    usedMessages: limitedConversations.count,
+                    totalChars: activity.messages.reduce(0) { $0 + $1.content.count },
+                    usedChars: limitedConversations.reduce(0) { $0 + $1.content.count },
+                    truncatedCount: 0
+                )
+
+                var project = ProjectActivity(
+                    path: activity.projectPath,
+                    name: activity.projectName,
+                    userInputs: activity.messages.filter { $0.role == .user }.map { $0.content },
+                    conversations: limitedConversations,
+                    timeRange: activity.timeRange,
+                    stats: stats
+                )
+                project.source = ActivitySource.cursor
+                cursorProjects.append(project)
+            }
+        }
+
+        // Combine Claude Code and Cursor projects
+        var allProjects = projects + cursorProjects
+
+        // Sort all projects by first activity time
+        allProjects.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        let totalMessages = sortedProjects.reduce(0) { $0 + $1.conversations.count }
-        logger.notice("aggregateForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (\(sortedProjects.count) projects, \(totalMessages) messages)")
+        let totalMessages = allProjects.reduce(0) { $0 + $1.conversations.count }
+        logger.notice("aggregateForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (\(allProjects.count) projects, \(totalMessages) messages)")
 
         return DailyActivity(
             date: date,
-            projects: sortedProjects,
+            projects: allProjects,
             totalInputs: dayHistory.count
         )
     }
@@ -202,12 +250,15 @@ actor AggregatorService {
         checkpoint = CFAbsoluteTimeGetCurrent()
 
         let dayHistory = historyService.filterByDate(allHistory, date: date)
+        let projectGroups = historyService.groupByProject(dayHistory)
 
-        if dayHistory.isEmpty {
+        // Get Cursor daily stats early to check if we have any activity
+        let cursorStats = try? await cursorService.getDailyStats(for: date)
+
+        // Return nil only if we have no Claude Code AND no Cursor activity
+        if dayHistory.isEmpty && cursorStats == nil {
             return nil
         }
-
-        let projectGroups = historyService.groupByProject(dayHistory)
         logger.notice("  filter/group: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms (\(projectGroups.count) projects)")
         checkpoint = CFAbsoluteTimeGetCurrent()
 
@@ -336,7 +387,8 @@ actor AggregatorService {
             sessionCount: allSessionIds.count,
             messageCount: totalMessageCount,
             characterCount: totalCharacterCount,
-            projects: projectSummaries
+            projects: projectSummaries,
+            cursorStats: cursorStats
         )
 
         // Cache for past dates
@@ -353,7 +405,7 @@ actor AggregatorService {
         return statistics
     }
 
-    /// Get all dates that have activity in history
+    /// Get all dates that have activity in history (Claude Code + Cursor)
     func getAllActivityDates() async throws -> Set<String> {
         let allHistory = try await historyService.readHistory()
 
@@ -361,6 +413,11 @@ actor AggregatorService {
         for entry in allHistory {
             dates.insert(DateFormatting.iso.string(from: entry.date))
         }
+
+        // Also add Cursor dates
+        let cursorDates = try await cursorService.getAllDatesWithStats()
+        dates.formUnion(cursorDates)
+
         return dates
     }
 

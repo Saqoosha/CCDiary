@@ -56,3 +56,12 @@ targets:
     settings:
       PRODUCT_NAME: benchmark
       PRODUCT_MODULE_NAME: BenchmarkTool
+
+  cursor-test:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Tools/CursorTest
+    settings:
+      PRODUCT_NAME: cursor-test
+      PRODUCT_MODULE_NAME: CursorTestTool

@@ -4,6 +4,7 @@ import SwiftUI
 struct RightPaneView: View {
     @Bindable var viewModel: DiaryViewModel
     @State private var showCopied = false
+    @State private var sourceFilter: ActivitySource = .all
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,10 +37,27 @@ struct RightPaneView: View {
             // Inline stats
             if let stats = viewModel.currentDayStatistics {
                 HStack(spacing: 16) {
-                    StatBadge(value: stats.projectCount, label: "projects")
-                    StatBadge(value: stats.sessionCount, label: "sessions")
-                    StatBadge(value: stats.messageCount, label: "messages")
-                    StatBadge(value: stats.characterCount, label: "chars", compact: true)
+                    // Claude Code stats
+                    HStack(spacing: 8) {
+                        Image(systemName: ActivitySource.claudeCode.iconName)
+                            .foregroundStyle(ActivitySource.claudeCode.color)
+                            .font(.system(size: 11))
+                        StatBadge(value: stats.projectCount, label: "projects")
+                        StatBadge(value: stats.messageCount, label: "msgs")
+                    }
+
+                    // Cursor stats (if available)
+                    if stats.hasCursorActivity {
+                        Divider()
+                            .frame(height: 16)
+
+                        HStack(spacing: 8) {
+                            Image(systemName: ActivitySource.cursor.iconName)
+                                .foregroundStyle(ActivitySource.cursor.color)
+                                .font(.system(size: 11))
+                            StatBadge(value: stats.cursorTotalAccepted, label: "lines")
+                        }
+                    }
                 }
             }
 

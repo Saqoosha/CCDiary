@@ -26,6 +26,7 @@ struct ProjectActivity: Identifiable, Sendable {
     let conversations: [ConversationMessage]
     let timeRange: ClosedRange<Date>
     let stats: ProjectStats
+    var source: ActivitySource = .claudeCode
 
     /// Format time range as "HH:mm - HH:mm"
     var formattedTimeRange: String {
