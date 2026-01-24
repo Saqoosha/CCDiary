@@ -278,10 +278,9 @@ actor CursorService {
                 timestamp = formatter.date(from: createdAtStr)
             }
 
-            // Filter by date if we have a timestamp
-            if let ts = timestamp {
-                guard ts >= startOfDay && ts < endOfDay else { continue }
-            }
+            // Skip messages without timestamp - they can't be filtered by date
+            guard let ts = timestamp else { continue }
+            guard ts >= startOfDay && ts < endOfDay else { continue }
 
             // Get text content
             let text = json["text"] as? String ?? ""
@@ -321,12 +320,12 @@ actor CursorService {
                 let messages = try getMessagesForComposer(composer.composerId, date: date)
                 allMessages.append(contentsOf: messages)
 
-                // Update time range
-                if composer.createdAt < timeRangeStart {
-                    timeRangeStart = composer.createdAt
-                }
-                if composer.lastUpdatedAt > timeRangeEnd {
-                    timeRangeEnd = composer.lastUpdatedAt
+                // Update time range from actual message timestamps
+                for msg in messages {
+                    if let ts = msg.timestamp {
+                        if ts < timeRangeStart { timeRangeStart = ts }
+                        if ts > timeRangeEnd { timeRangeEnd = ts }
+                    }
                 }
             }
 
@@ -396,29 +395,6 @@ struct CursorProjectActivity: Sendable {
 
     var timeRange: ClosedRange<Date> {
         timeRangeStart...timeRangeEnd
-    }
-}
-
-// MARK: - Data Extension for Hex Decoding
-
-extension Data {
-    init?(hexString: String) {
-        let hex = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard hex.count % 2 == 0 else { return nil }
-
-        var data = Data(capacity: hex.count / 2)
-
-        var index = hex.startIndex
-        while index < hex.endIndex {
-            let nextIndex = hex.index(index, offsetBy: 2)
-            guard let byte = UInt8(hex[index..<nextIndex], radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-            index = nextIndex
-        }
-
-        self = data
     }
 }
 

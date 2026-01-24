@@ -161,47 +161,52 @@ actor AggregatorService {
 
         // Get Cursor activity for this date
         var cursorProjects: [ProjectActivity] = []
-        if let cursorActivities = try? await cursorService.getActivityForDate(date) {
-            for activity in cursorActivities {
-                // Convert CursorChatMessage to ConversationMessage
-                let conversations = activity.messages.map { msg in
-                    ConversationMessage(
-                        role: msg.role,
-                        content: msg.content.count <= maxContentLength
-                            ? msg.content
-                            : String(msg.content.prefix(maxContentLength)) + "...",
-                        timestamp: msg.timestamp ?? activity.timeRangeStart
-                    )
-                }
-
-                // Limit messages
-                let limitedConversations: [ConversationMessage]
-                if conversations.count <= maxMessagesPerProject {
-                    limitedConversations = conversations
-                } else {
-                    let half = maxMessagesPerProject / 2
-                    limitedConversations = Array(conversations.prefix(half)) + Array(conversations.suffix(half))
-                }
-
-                let stats = ProjectStats(
-                    totalMessages: conversations.count,
-                    usedMessages: limitedConversations.count,
-                    totalChars: activity.messages.reduce(0) { $0 + $1.content.count },
-                    usedChars: limitedConversations.reduce(0) { $0 + $1.content.count },
-                    truncatedCount: 0
+        let cursorActivities: [CursorProjectActivity]
+        do {
+            cursorActivities = try await cursorService.getActivityForDate(date)
+        } catch {
+            logger.warning("Failed to get Cursor activity: \(error.localizedDescription)")
+            cursorActivities = []
+        }
+        for activity in cursorActivities {
+            // Convert CursorChatMessage to ConversationMessage
+            let conversations = activity.messages.map { msg in
+                ConversationMessage(
+                    role: msg.role,
+                    content: msg.content.count <= maxContentLength
+                        ? msg.content
+                        : String(msg.content.prefix(maxContentLength)) + "...",
+                    timestamp: msg.timestamp ?? activity.timeRangeStart
                 )
-
-                var project = ProjectActivity(
-                    path: activity.projectPath,
-                    name: activity.projectName,
-                    userInputs: activity.messages.filter { $0.role == .user }.map { $0.content },
-                    conversations: limitedConversations,
-                    timeRange: activity.timeRange,
-                    stats: stats
-                )
-                project.source = ActivitySource.cursor
-                cursorProjects.append(project)
             }
+
+            // Limit messages
+            let limitedConversations: [ConversationMessage]
+            if conversations.count <= maxMessagesPerProject {
+                limitedConversations = conversations
+            } else {
+                let half = maxMessagesPerProject / 2
+                limitedConversations = Array(conversations.prefix(half)) + Array(conversations.suffix(half))
+            }
+
+            let stats = ProjectStats(
+                totalMessages: conversations.count,
+                usedMessages: limitedConversations.count,
+                totalChars: activity.messages.reduce(0) { $0 + $1.content.count },
+                usedChars: limitedConversations.reduce(0) { $0 + $1.content.count },
+                truncatedCount: 0
+            )
+
+            var project = ProjectActivity(
+                path: activity.projectPath,
+                name: activity.projectName,
+                userInputs: activity.messages.filter { $0.role == .user }.map { $0.content },
+                conversations: limitedConversations,
+                timeRange: activity.timeRange,
+                stats: stats
+            )
+            project.source = .cursor
+            cursorProjects.append(project)
         }
 
         // Combine Claude Code and Cursor projects
@@ -253,7 +258,13 @@ actor AggregatorService {
         let projectGroups = historyService.groupByProject(dayHistory)
 
         // Get Cursor daily stats early to check if we have any activity
-        let cursorStats = try? await cursorService.getDailyStats(for: date)
+        var cursorStats: CursorDailyStats?
+        do {
+            cursorStats = try await cursorService.getDailyStats(for: date)
+        } catch {
+            logger.warning("Failed to get Cursor daily stats: \(error.localizedDescription)")
+            cursorStats = nil
+        }
 
         // Return nil only if we have no Claude Code AND no Cursor activity
         if dayHistory.isEmpty && cursorStats == nil {

@@ -4,7 +4,6 @@ import SwiftUI
 struct RightPaneView: View {
     @Bindable var viewModel: DiaryViewModel
     @State private var showCopied = false
-    @State private var sourceFilter: ActivitySource = .all
 
     var body: some View {
         VStack(spacing: 0) {
