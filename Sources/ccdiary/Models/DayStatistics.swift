@@ -3,40 +3,44 @@ import Foundation
 /// Quick statistics for a single day (without full conversation content)
 struct DayStatistics: Sendable, Codable {
     let date: Date
-    let projectCount: Int
-    let sessionCount: Int       // unique session IDs
-    let messageCount: Int
-    let characterCount: Int
+
+    // Claude Code stats
+    let ccProjectCount: Int
+    let ccSessionCount: Int
+    let ccMessageCount: Int
+
+    // Cursor stats
+    let cursorProjectCount: Int
+    let cursorSessionCount: Int
+    let cursorMessageCount: Int
+
     let projects: [ProjectSummary]
 
-    // Cursor-specific stats (optional for backwards compatibility)
-    let cursorStats: CursorDailyStats?
-
-    // Custom coding keys to handle optional cursorStats
+    // Custom coding keys
     enum CodingKeys: String, CodingKey {
-        case date, projectCount, sessionCount, messageCount, characterCount, projects, cursorStats
+        case date, ccProjectCount, ccSessionCount, ccMessageCount
+        case cursorProjectCount, cursorSessionCount, cursorMessageCount
+        case projects
     }
 
-    init(date: Date, projectCount: Int, sessionCount: Int, messageCount: Int, characterCount: Int, projects: [ProjectSummary], cursorStats: CursorDailyStats? = nil) {
+    init(date: Date,
+         ccProjectCount: Int, ccSessionCount: Int, ccMessageCount: Int,
+         cursorProjectCount: Int = 0, cursorSessionCount: Int = 0, cursorMessageCount: Int = 0,
+         projects: [ProjectSummary]) {
         self.date = date
-        self.projectCount = projectCount
-        self.sessionCount = sessionCount
-        self.messageCount = messageCount
-        self.characterCount = characterCount
+        self.ccProjectCount = ccProjectCount
+        self.ccSessionCount = ccSessionCount
+        self.ccMessageCount = ccMessageCount
+        self.cursorProjectCount = cursorProjectCount
+        self.cursorSessionCount = cursorSessionCount
+        self.cursorMessageCount = cursorMessageCount
         self.projects = projects
-        self.cursorStats = cursorStats
     }
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        date = try container.decode(Date.self, forKey: .date)
-        projectCount = try container.decode(Int.self, forKey: .projectCount)
-        sessionCount = try container.decode(Int.self, forKey: .sessionCount)
-        messageCount = try container.decode(Int.self, forKey: .messageCount)
-        characterCount = try container.decode(Int.self, forKey: .characterCount)
-        projects = try container.decode([ProjectSummary].self, forKey: .projects)
-        cursorStats = try container.decodeIfPresent(CursorDailyStats.self, forKey: .cursorStats)
-    }
+    // Combined totals
+    var projectCount: Int { ccProjectCount + cursorProjectCount }
+    var sessionCount: Int { ccSessionCount + cursorSessionCount }
+    var messageCount: Int { ccMessageCount + cursorMessageCount }
 
     /// Format date as localized string
     var formattedDate: String {
@@ -46,21 +50,6 @@ struct DayStatistics: Sendable, Codable {
     /// Format date as ISO date string (YYYY-MM-DD)
     var isoDateString: String {
         DateFormatting.iso.string(from: date)
-    }
-
-    /// Check if there's any Cursor activity
-    var hasCursorActivity: Bool {
-        cursorStats?.hasActivity ?? false
-    }
-
-    /// Total lines suggested by Cursor (Tab + Composer)
-    var cursorTotalSuggested: Int {
-        (cursorStats?.tabSuggestedLines ?? 0) + (cursorStats?.composerSuggestedLines ?? 0)
-    }
-
-    /// Total lines accepted from Cursor (Tab + Composer)
-    var cursorTotalAccepted: Int {
-        (cursorStats?.tabAcceptedLines ?? 0) + (cursorStats?.composerAcceptedLines ?? 0)
     }
 }
 

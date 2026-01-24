@@ -364,6 +364,32 @@ actor CursorService {
         }
         return stats.hasActivity
     }
+
+    /// Get quick stats for a date (project count, session count, message count)
+    func getQuickStatsForDate(_ date: Date) async throws -> CursorQuickStats {
+        guard isAvailable() else {
+            return CursorQuickStats(projectCount: 0, sessionCount: 0, messageCount: 0)
+        }
+
+        let activities = try await getActivityForDate(date)
+
+        let projectCount = activities.count
+        let sessionCount = activities.reduce(0) { $0 + $1.composerCount }
+        let messageCount = activities.reduce(0) { $0 + $1.messages.count }
+
+        return CursorQuickStats(
+            projectCount: projectCount,
+            sessionCount: sessionCount,
+            messageCount: messageCount
+        )
+    }
+}
+
+/// Quick stats for Cursor activity
+struct CursorQuickStats: Sendable {
+    let projectCount: Int
+    let sessionCount: Int
+    let messageCount: Int
 }
 
 // MARK: - Models

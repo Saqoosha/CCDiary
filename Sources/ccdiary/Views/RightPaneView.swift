@@ -33,30 +33,12 @@ struct RightPaneView: View {
 
             Spacer()
 
-            // Inline stats
+            // Inline stats (combined from all sources)
             if let stats = viewModel.currentDayStatistics {
-                HStack(spacing: 16) {
-                    // Claude Code stats
-                    HStack(spacing: 8) {
-                        Image(systemName: ActivitySource.claudeCode.iconName)
-                            .foregroundStyle(ActivitySource.claudeCode.color)
-                            .font(.system(size: 11))
-                        StatBadge(value: stats.projectCount, label: "projects")
-                        StatBadge(value: stats.messageCount, label: "msgs")
-                    }
-
-                    // Cursor stats (if available)
-                    if stats.hasCursorActivity {
-                        Divider()
-                            .frame(height: 16)
-
-                        HStack(spacing: 8) {
-                            Image(systemName: ActivitySource.cursor.iconName)
-                                .foregroundStyle(ActivitySource.cursor.color)
-                                .font(.system(size: 11))
-                            StatBadge(value: stats.cursorTotalAccepted, label: "lines")
-                        }
-                    }
+                HStack(spacing: 12) {
+                    StatBadge(value: stats.projectCount, label: "projects")
+                    StatBadge(value: stats.sessionCount, label: "sessions")
+                    StatBadge(value: stats.messageCount, label: "msgs")
                 }
             }
 

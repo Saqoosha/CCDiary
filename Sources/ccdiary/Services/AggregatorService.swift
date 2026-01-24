@@ -257,17 +257,16 @@ actor AggregatorService {
         let dayHistory = historyService.filterByDate(allHistory, date: date)
         let projectGroups = historyService.groupByProject(dayHistory)
 
-        // Get Cursor daily stats early to check if we have any activity
-        var cursorStats: CursorDailyStats?
+        // Get Cursor quick stats
+        var cursorQuickStats = CursorQuickStats(projectCount: 0, sessionCount: 0, messageCount: 0)
         do {
-            cursorStats = try await cursorService.getDailyStats(for: date)
+            cursorQuickStats = try await cursorService.getQuickStatsForDate(date)
         } catch {
-            logger.warning("Failed to get Cursor daily stats: \(error.localizedDescription)")
-            cursorStats = nil
+            logger.warning("Failed to get Cursor stats: \(error.localizedDescription)")
         }
 
         // Return nil only if we have no Claude Code AND no Cursor activity
-        if dayHistory.isEmpty && cursorStats == nil {
+        if dayHistory.isEmpty && cursorQuickStats.projectCount == 0 {
             return nil
         }
         logger.notice("  filter/group: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms (\(projectGroups.count) projects)")
@@ -394,12 +393,13 @@ actor AggregatorService {
 
         let statistics = DayStatistics(
             date: date,
-            projectCount: projectGroups.count,
-            sessionCount: allSessionIds.count,
-            messageCount: totalMessageCount,
-            characterCount: totalCharacterCount,
-            projects: projectSummaries,
-            cursorStats: cursorStats
+            ccProjectCount: projectGroups.count,
+            ccSessionCount: allSessionIds.count,
+            ccMessageCount: totalMessageCount,
+            cursorProjectCount: cursorQuickStats.projectCount,
+            cursorSessionCount: cursorQuickStats.sessionCount,
+            cursorMessageCount: cursorQuickStats.messageCount,
+            projects: projectSummaries
         )
 
         // Cache for past dates
