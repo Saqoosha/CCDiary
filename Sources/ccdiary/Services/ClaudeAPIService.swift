@@ -10,6 +10,7 @@ actor ClaudeAPIService {
 
         var request = URLRequest(url: baseURL)
         request.httpMethod = "POST"
+        request.timeoutInterval = 180 // 3 minutes for long diary generation
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")

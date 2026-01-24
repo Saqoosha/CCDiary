@@ -13,6 +13,7 @@ actor GeminiAPIService {
 
         var request = URLRequest(url: urlComponents.url!)
         request.httpMethod = "POST"
+        request.timeoutInterval = 180 // 3 minutes for long diary generation
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [

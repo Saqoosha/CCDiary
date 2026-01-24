@@ -69,6 +69,20 @@ struct RightPaneView: View {
                 }
             }
 
+            // Regenerate button
+            if viewModel.currentDiary != nil {
+                Button {
+                    Task {
+                        await viewModel.generateDiary()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help("Regenerate diary")
+            }
+
             // Copy button
             if viewModel.currentDiary != nil {
                 Button {
