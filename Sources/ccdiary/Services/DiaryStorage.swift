@@ -5,9 +5,9 @@ actor DiaryStorage {
     private let diariesDirectory: URL
 
     init() {
-        // Default to ~/Desktop/ccdiary/diaries for compatibility with CLI
+        // Default to ~/Documents/ccdiary/ (macOS standard for user documents)
         let home = FileManager.default.homeDirectoryForCurrentUser
-        self.diariesDirectory = home.appendingPathComponent("Desktop/ccdiary/diaries")
+        self.diariesDirectory = home.appendingPathComponent("Documents/ccdiary")
     }
 
     init(directory: URL) {
