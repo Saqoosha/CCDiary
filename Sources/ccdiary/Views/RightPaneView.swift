@@ -343,7 +343,7 @@ struct StatBadge: View {
 // MARK: - App Icon Helper
 
 enum AppIconHelper {
-    /// Get app icon from /Applications or fallback to SF Symbol
+    /// Get app icon from /Applications or fallback to asset catalog
     static func icon(for appName: String) -> NSImage {
         let paths = [
             "/Applications/\(appName).app",
@@ -357,7 +357,12 @@ enum AppIconHelper {
             }
         }
 
-        // Fallback to generic app icon
+        // Fallback to asset catalog icon
+        if let assetIcon = NSImage(named: "\(appName)Icon") {
+            return assetIcon
+        }
+
+        // Last resort: generic app icon
         return NSWorkspace.shared.icon(for: .applicationBundle)
     }
 }
