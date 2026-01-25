@@ -257,13 +257,18 @@ actor AggregatorService {
         let dayHistory = historyService.filterByDate(allHistory, date: date)
         let projectGroups = historyService.groupByProject(dayHistory)
 
-        // Get Cursor quick stats
-        var cursorQuickStats = CursorQuickStats(projectCount: 0, sessionCount: 0, messageCount: 0)
+        // Get Cursor activity (includes project details for badges)
+        var cursorActivities: [CursorProjectActivity] = []
         do {
-            cursorQuickStats = try await cursorService.getQuickStatsForDate(date)
+            cursorActivities = try await cursorService.getActivityForDate(date)
         } catch {
-            logger.warning("Failed to get Cursor stats: \(error.localizedDescription)")
+            logger.warning("Failed to get Cursor activity: \(error.localizedDescription)")
         }
+        let cursorQuickStats = CursorQuickStats(
+            projectCount: cursorActivities.count,
+            sessionCount: cursorActivities.reduce(0) { $0 + $1.composerCount },
+            messageCount: cursorActivities.reduce(0) { $0 + $1.messages.count }
+        )
 
         // Return nil only if we have no Claude Code AND no Cursor activity
         if dayHistory.isEmpty && cursorQuickStats.projectCount == 0 {
@@ -388,7 +393,20 @@ actor AggregatorService {
             allSessionIds.formUnion(result.sessionIds)
         }
 
-        // Sort projects by first activity time
+        // Add Cursor projects to summaries
+        for activity in cursorActivities {
+            var summary = ProjectSummary(
+                name: activity.projectName,
+                path: activity.projectPath,
+                messageCount: activity.messages.count,
+                timeRangeStart: activity.timeRangeStart,
+                timeRangeEnd: activity.timeRangeEnd
+            )
+            summary.source = .cursor
+            projectSummaries.append(summary)
+        }
+
+        // Sort all projects by first activity time
         projectSummaries.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
 
         let statistics = DayStatistics(
@@ -411,7 +429,7 @@ actor AggregatorService {
         await conversationService.saveDateCache()
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (\(statistics.projectCount) projects, \(statistics.messageCount) messages)")
+        logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (CC: \(statistics.ccProjectCount) proj/\(statistics.ccMessageCount) msgs, Cursor: \(statistics.cursorProjectCount) proj/\(statistics.cursorMessageCount) msgs)")
 
         return statistics
     }
