@@ -416,25 +416,40 @@ actor AggregatorService {
         return statistics
     }
 
-    /// Get all dates that have activity in history (Claude Code + Cursor)
+    /// Get all dates that have activity (Claude Code conversations + Cursor)
     func getAllActivityDates() async throws -> Set<String> {
-        let allHistory = try await historyService.readHistory()
-
         var dates: Set<String> = []
-        for entry in allHistory {
-            dates.insert(DateFormatting.iso.string(from: entry.date))
+
+        // Get Claude Code dates from conversation file index (not history.jsonl)
+        // This ensures we only show dates that have actual conversation data
+        let ccDates = await conversationService.getAllDatesWithConversations()
+        logger.notice("getAllActivityDates: CC dates = \(ccDates.count) [\(ccDates.sorted().suffix(5).joined(separator: ", "))]")
+        dates.formUnion(ccDates)
+
+        // Also add Cursor dates from actual messages (never throws, returns empty on error)
+        do {
+            let cursorDates = try await cursorService.getAllDatesWithMessages()
+            logger.notice("getAllActivityDates: Cursor dates = \(cursorDates.count) [\(cursorDates.sorted().suffix(5).joined(separator: ", "))]")
+            dates.formUnion(cursorDates)
+        } catch {
+            logger.warning("Failed to get Cursor dates: \(error.localizedDescription)")
         }
 
-        // Also add Cursor dates
-        let cursorDates = try await cursorService.getAllDatesWithStats()
-        dates.formUnion(cursorDates)
-
+        logger.notice("getAllActivityDates: Total = \(dates.count) dates")
         return dates
     }
 
     /// Build date index for fast lookups (call at app startup)
-    func buildDateIndex() async {
+    func buildDateIndex(progressCallback: (@MainActor @Sendable (String) -> Void)? = nil) async {
+        await progressCallback?("Building Claude Code index...")
         await conversationService.buildFullDateIndex()
+
+        await progressCallback?("Building Cursor index...")
+        do {
+            _ = try await cursorService.buildDateIndexIfNeeded()
+        } catch {
+            logger.warning("Failed to build Cursor date index: \(error.localizedDescription)")
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - FocusedValue for menu access
 
@@ -42,6 +43,8 @@ struct ContentView: View {
             await viewModel.loadInitialData()
         }
         .onChange(of: viewModel.selectedDate) { _, newDate in
+            // Don't load during initial data loading (will be loaded at the end)
+            guard !viewModel.isLoadingInitial else { return }
             Task {
                 await viewModel.loadDataForDate(newDate)
             }
@@ -55,6 +58,14 @@ struct ContentView: View {
             Button("OK") { }
         } message: {
             Text(viewModel.successMessage)
+        }
+        .alert("Cursor Access Required", isPresented: $viewModel.showCursorPermissionAlert) {
+            Button("Open System Settings") {
+                viewModel.openFullDiskAccessSettings()
+            }
+            Button("Ignore", role: .cancel) { }
+        } message: {
+            Text("ccdiary needs Full Disk Access to read Cursor activity data.\n\nPlease add ccdiary to Full Disk Access in System Settings, then restart the app.")
         }
         .overlay {
             if viewModel.isBuildingIndex || viewModel.isGenerating {
@@ -94,6 +105,7 @@ final class DiaryViewModel {
     var isLoadingDate = false
     var isBuildingIndex = false
     var indexBuildProgress = ""
+    private var lastLoadedDateString: String = ""
 
     // Generation state
     var isGenerating = false
@@ -104,6 +116,9 @@ final class DiaryViewModel {
     var errorMessage = ""
     var showSuccess = false
     var successMessage = ""
+
+    // Cursor permission
+    var showCursorPermissionAlert = false
 
     // Stored properties that sync with UserDefaults
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
@@ -177,11 +192,17 @@ final class DiaryViewModel {
 
     func loadInitialData() async {
         isLoadingInitial = true
+
+        // Check Cursor access permission
+        checkCursorPermission()
+
         do {
             // Build date index first (fast if already cached)
             isBuildingIndex = true
-            indexBuildProgress = "Building file index..."
-            await aggregator.buildDateIndex()
+            indexBuildProgress = "Building Claude Code index..."
+            await aggregator.buildDateIndex { @MainActor [weak self] progress in
+                self?.indexBuildProgress = progress
+            }
             isBuildingIndex = false
             indexBuildProgress = ""
 
@@ -201,16 +222,36 @@ final class DiaryViewModel {
         isLoadingInitial = false
     }
 
+    private func checkCursorPermission() {
+        let cursorService = CursorService()
+        let status = cursorService.checkAccessStatus()
+        if status == .noPermission {
+            showCursorPermissionAlert = true
+        }
+    }
+
+    func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     // MARK: - Date Selection
 
-    func loadDataForDate(_ date: Date) async {
+    func loadDataForDate(_ date: Date, force: Bool = false) async {
+        let dateString = formatDateString(date)
+
+        // Skip if already loaded this date (prevents double loading)
+        if !force && dateString == lastLoadedDateString && !isLoadingDate {
+            return
+        }
+
         isLoadingDate = true
-        
+        lastLoadedDateString = dateString
+
         // Reset immediately to avoid showing stale data
         currentDayStatistics = nil
         currentDiary = nil
-        
-        let dateString = formatDateString(date)
 
         // Load diary if exists
         do {
@@ -222,6 +263,11 @@ final class DiaryViewModel {
         // Load statistics
         do {
             currentDayStatistics = try await aggregator.getQuickStatistics(for: date)
+
+            // Remove from activity dates if no actual messages
+            if let stats = currentDayStatistics, stats.messageCount == 0 {
+                datesWithActivity.remove(dateString)
+            }
         } catch {
             currentDayStatistics = nil
         }

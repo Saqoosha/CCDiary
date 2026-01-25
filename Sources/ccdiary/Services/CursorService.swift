@@ -7,11 +7,68 @@ private let logger = Logger(subsystem: "ccdiary", category: "CursorService")
 // SQLITE_TRANSIENT tells SQLite to copy the string immediately
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
+/// Cache for Cursor dates with actual messages
+private actor CursorDateCache {
+    private var dates: Set<String> = []
+    private var isLoaded = false
+    private var lastDBModTime: TimeInterval = 0
+
+    private static var cacheFileURL: URL {
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("ccdiary")
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        return cacheDir.appendingPathComponent("cursor_dates.json")
+    }
+
+    func getDates() -> Set<String> {
+        return dates
+    }
+
+    func setDates(_ newDates: Set<String>, dbModTime: TimeInterval) {
+        dates = newDates
+        lastDBModTime = dbModTime
+        saveToDisk()
+    }
+
+    func needsRebuild(currentDBModTime: TimeInterval) -> Bool {
+        ensureLoaded()
+        return currentDBModTime != lastDBModTime
+    }
+
+    private func ensureLoaded() {
+        guard !isLoaded else { return }
+        loadFromDisk()
+        isLoaded = true
+    }
+
+    private func loadFromDisk() {
+        guard let data = try? Data(contentsOf: Self.cacheFileURL),
+              let stored = try? JSONDecoder().decode(StoredCursorDateCache.self, from: data) else {
+            return
+        }
+        dates = Set(stored.dates)
+        lastDBModTime = stored.dbModTime
+        logger.info("Loaded Cursor date cache: \(self.dates.count) dates")
+    }
+
+    private func saveToDisk() {
+        let stored = StoredCursorDateCache(dates: Array(dates), dbModTime: lastDBModTime)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        try? data.write(to: Self.cacheFileURL)
+    }
+
+    private struct StoredCursorDateCache: Codable {
+        let dates: [String]
+        let dbModTime: TimeInterval
+    }
+}
+
 /// Service for reading Cursor activity data from SQLite database
 actor CursorService {
     private let globalDBPath: String
     private let workspaceStoragePath: String
     private var globalDB: OpaquePointer?
+    private let dateCache = CursorDateCache()
 
     /// Default Cursor paths
     static var defaultGlobalDBPath: String {
@@ -43,23 +100,59 @@ actor CursorService {
         FileManager.default.fileExists(atPath: globalDBPath)
     }
 
-    /// Open global database connection (read-only)
+    /// Check if we have permission to access Cursor database
+    /// Returns: .notInstalled, .noPermission, or .accessible
+    nonisolated func checkAccessStatus() -> CursorAccessStatus {
+        guard FileManager.default.fileExists(atPath: globalDBPath) else {
+            return .notInstalled
+        }
+
+        // Try to open the database with immutable mode and run a test query
+        var db: OpaquePointer?
+        let uriPath = "file:\(globalDBPath)?immutable=1"
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
+        let result = sqlite3_open_v2(uriPath, &db, flags, nil)
+        defer {
+            if db != nil {
+                sqlite3_close(db)
+            }
+        }
+
+        guard result == SQLITE_OK else {
+            return .noPermission
+        }
+
+        // Also verify we can actually query
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT 1", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_finalize(stmt)
+            return .accessible
+        } else {
+            return .noPermission
+        }
+    }
+
+    /// Open global database connection (read-only, immutable mode)
     private func openGlobalDB() throws {
         guard globalDB == nil else { return }
 
-        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
-        let result = sqlite3_open_v2(globalDBPath, &globalDB, flags, nil)
+        // Use immutable mode via URI to avoid WAL/temp file issues
+        let uriPath = "file:\(globalDBPath)?immutable=1"
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
+        let result = sqlite3_open_v2(uriPath, &globalDB, flags, nil)
         if result != SQLITE_OK {
             let errorMsg = String(cString: sqlite3_errmsg(globalDB))
             throw CursorServiceError.databaseOpenFailed(errorMsg)
         }
     }
 
-    /// Open a workspace-specific database
+    /// Open a workspace-specific database (read-only, immutable mode)
     private nonisolated func openWorkspaceDB(at path: String) -> OpaquePointer? {
         var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
-        if sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK {
+        // Use immutable mode via URI to avoid WAL/temp file issues
+        let uriPath = "file:\(path)?immutable=1"
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
+        if sqlite3_open_v2(uriPath, &db, flags, nil) == SQLITE_OK {
             return db
         }
         return nil
@@ -107,32 +200,195 @@ actor CursorService {
         return nil
     }
 
-    /// Get all dates that have daily stats
-    func getAllDatesWithStats() async throws -> Set<String> {
+    /// Get all dates that have actual Composer messages (from cache only)
+    func getAllDatesWithMessages() async throws -> Set<String> {
+        guard isAvailable() else {
+            return []
+        }
+        // Return cached dates - buildDateIndexIfNeeded() should be called at startup
+        return await dateCache.getDates()
+    }
+
+    /// Build date index if needed (call at app startup)
+    func buildDateIndexIfNeeded() async throws -> Set<String> {
         guard isAvailable() else {
             return []
         }
 
+        // Check if cache needs rebuild
+        let dbModTime = getDBModTime()
+        if await !dateCache.needsRebuild(currentDBModTime: dbModTime) {
+            logger.notice("Cursor date index up-to-date")
+            return await dateCache.getDates()
+        }
+
+        // Rebuild cache from database
+        let dates = try await buildDateIndex()
+        await dateCache.setDates(dates, dbModTime: dbModTime)
+
+        return dates
+    }
+
+    /// Get database modification time
+    private nonisolated func getDBModTime() -> TimeInterval {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: globalDBPath),
+              let modDate = attrs[.modificationDate] as? Date else {
+            return 0
+        }
+        return modDate.timeIntervalSince1970
+    }
+
+    /// Build date index from workspace composers (same logic as getActivityForDate)
+    private func buildDateIndex() async throws -> Set<String> {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
         try openGlobalDB()
 
-        let query = "SELECT key FROM ItemTable WHERE key LIKE 'aiCodeTracking.dailyStats.v1.5.%'"
+        let workspaces = getAllWorkspaces()
+        logger.notice("buildDateIndex: \(workspaces.count) workspaces found")
 
+        // Step 1: Get all composers from all workspaces in parallel
+        var checkpoint = CFAbsoluteTimeGetCurrent()
+        let allComposers = await withTaskGroup(of: [String].self) { group in
+            for (_, _, dbPath) in workspaces {
+                group.addTask {
+                    let composers = self.getAllComposersFromWorkspace(dbPath: dbPath)
+                    return composers.map { $0.composerId }
+                }
+            }
+
+            var results: [String] = []
+            for await composerIds in group {
+                results.append(contentsOf: composerIds)
+            }
+            return results
+        }
+        logger.notice("  workspace scan: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms (\(allComposers.count) composers)")
+        checkpoint = CFAbsoluteTimeGetCurrent()
+
+        // Step 2: Get all message dates in a single query (much faster than per-composer queries)
+        let dates = try getAllMessageDates()
+        logger.notice("  message dates: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms")
+
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        logger.notice("Built Cursor date index: \(dates.count) dates in \(elapsed, format: .fixed(precision: 1))ms")
+
+        return dates
+    }
+
+    /// Get all unique dates from ALL messages in globalDB (single efficient query)
+    private func getAllMessageDates() throws -> Set<String> {
+        let query = "SELECT value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
         var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) != SQLITE_OK {
+
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
             let errorMsg = String(cString: sqlite3_errmsg(globalDB))
             throw CursorServiceError.queryFailed(errorMsg)
         }
         defer { sqlite3_finalize(stmt) }
 
         var dates: Set<String> = []
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let keyPtr = sqlite3_column_text(stmt, 0) else { continue }
-            let key = String(cString: keyPtr)
-            // Extract date from key: aiCodeTracking.dailyStats.v1.5.YYYY-MM-DD
-            if let dateStr = key.split(separator: ".").last {
-                dates.insert(String(dateStr))
+            guard let valuePtr = sqlite3_column_blob(stmt, 0) else { continue }
+            let valueLength = sqlite3_column_bytes(stmt, 0)
+            let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+            // Fast path: try to extract just createdAt without full JSON parsing
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? Int,
+                  type == 1 || type == 2,
+                  let createdAtStr = json["createdAt"] as? String,
+                  let createdAt = isoFormatter.date(from: createdAtStr),
+                  !((json["text"] as? String) ?? "").isEmpty else {
+                continue
             }
+
+            let dateString = DateFormatting.iso.string(from: createdAt)
+            dates.insert(dateString)
+        }
+
+        return dates
+    }
+
+    /// Get all composers from a workspace (without date filtering)
+    private nonisolated func getAllComposersFromWorkspace(dbPath: String) -> [CursorComposerInfo] {
+        guard let db = openWorkspaceDB(at: dbPath) else { return [] }
+        defer { sqlite3_close(db) }
+
+        let query = "SELECT value FROM ItemTable WHERE key = 'composer.composerData'"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              let valuePtr = sqlite3_column_blob(stmt, 0) else { return [] }
+
+        let valueLength = sqlite3_column_bytes(stmt, 0)
+        let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let allComposers = json["allComposers"] as? [[String: Any]] else {
+            return []
+        }
+
+        var composers: [CursorComposerInfo] = []
+
+        for composer in allComposers {
+            guard let composerId = composer["composerId"] as? String else { continue }
+
+            let createdAt = composer["createdAt"] as? Double ?? 0
+            let lastUpdatedAt = composer["lastUpdatedAt"] as? Double ?? createdAt
+            let name = composer["name"] as? String
+
+            composers.append(CursorComposerInfo(
+                composerId: composerId,
+                name: name,
+                subtitle: nil,
+                createdAt: Date(timeIntervalSince1970: createdAt / 1000),
+                lastUpdatedAt: Date(timeIntervalSince1970: lastUpdatedAt / 1000)
+            ))
+        }
+
+        return composers
+    }
+
+    /// Get all unique dates from messages for a composer
+    private func getMessageDatesForComposer(_ composerId: String) throws -> Set<String> {
+        let query = "SELECT value FROM cursorDiskKV WHERE key LIKE ?"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+            return []
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        let pattern = "bubbleId:\(composerId):%"
+        sqlite3_bind_text(stmt, 1, pattern, -1, SQLITE_TRANSIENT)
+
+        var dates: Set<String> = []
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let valuePtr = sqlite3_column_blob(stmt, 0) else { continue }
+            let valueLength = sqlite3_column_bytes(stmt, 0)
+            let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? Int,
+                  type == 1 || type == 2,
+                  let createdAtStr = json["createdAt"] as? String,
+                  let createdAt = isoFormatter.date(from: createdAtStr),
+                  !((json["text"] as? String) ?? "").isEmpty else {
+                continue
+            }
+
+            let dateString = DateFormatting.iso.string(from: createdAt)
+            dates.insert(dateString)
         }
 
         return dates
@@ -157,23 +413,36 @@ actor CursorService {
             guard FileManager.default.fileExists(atPath: stateDBPath) else { continue }
 
             // Read workspace.json to get project path
+            // Can be "folder" (local) or "workspace" (remote/multi-root)
             guard let jsonData = FileManager.default.contents(atPath: workspaceJsonPath),
-                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                  let folderURL = json["folder"] as? String else {
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
                 continue
             }
 
-            // Convert file:// URL to path (handles file://localhost/... and file:///...)
+            // Try "folder" first, then "workspace"
+            guard let rawURL = (json["folder"] as? String) ?? (json["workspace"] as? String) else {
+                continue
+            }
+
+            // Convert URL to path/name
             let projectPath: String
-            if let url = URL(string: folderURL), url.isFileURL {
+            if let url = URL(string: rawURL), url.isFileURL {
                 projectPath = url.path
-            } else if folderURL.hasPrefix("file://") {
-                // Fallback for malformed URLs
-                let stripped = folderURL.replacingOccurrences(of: "file://localhost", with: "")
+            } else if rawURL.hasPrefix("file://") {
+                // Fallback for malformed file:// URLs
+                let stripped = rawURL.replacingOccurrences(of: "file://localhost", with: "")
                     .replacingOccurrences(of: "file://", with: "")
                 projectPath = stripped.removingPercentEncoding ?? stripped
+            } else if rawURL.hasPrefix("vscode-remote://") {
+                // Remote workspace: extract path from URL
+                // e.g., vscode-remote://ssh-remote%2Brh1/home/udgp/UDGP.code-workspace
+                if let url = URL(string: rawURL), !url.path.isEmpty {
+                    projectPath = url.path
+                } else {
+                    projectPath = rawURL
+                }
             } else {
-                projectPath = folderURL
+                projectPath = rawURL
             }
 
             workspaces.append((hash, projectPath, stateDBPath))
@@ -446,4 +715,11 @@ enum CursorServiceError: LocalizedError {
             return "Invalid date provided"
         }
     }
+}
+
+/// Cursor database access status
+enum CursorAccessStatus: Sendable {
+    case notInstalled
+    case noPermission
+    case accessible
 }

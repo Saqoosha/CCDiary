@@ -17,8 +17,8 @@ struct RightPaneView: View {
 
             Divider()
 
-            // Main content
-            if viewModel.isLoadingInitial || viewModel.isLoadingDate {
+            // Main content (don't show loading during index building - overlay handles that)
+            if viewModel.isLoadingDate && !viewModel.isBuildingIndex {
                 loadingView
             } else {
                 mainScrollContent

@@ -31,6 +31,12 @@ private actor DateIndex {
         return dateToFiles[dateString]
     }
 
+    /// Get all dates that have conversation data
+    func getAllDates() -> Set<String> {
+        ensureLoaded()
+        return Set(dateToFiles.keys)
+    }
+
     /// Check if a file is indexed and up-to-date
     func isFileIndexed(_ path: String, modTime: TimeInterval) -> Bool {
         ensureLoaded()
@@ -127,6 +133,12 @@ actor ConversationService {
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.projectsPath = home.appendingPathComponent(".claude/projects")
+    }
+
+    /// Get all dates that have actual conversation data
+    /// Note: Call buildFullDateIndex() at app startup first
+    func getAllDatesWithConversations() async -> Set<String> {
+        await dateIndex.getAllDates()
     }
 
     /// Get files for a specific date from pre-built index

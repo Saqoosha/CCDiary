@@ -26,19 +26,137 @@ extension Data {
 
 // MARK: - Test Functions
 
+func testQueryDB(_ db: OpaquePointer?, label: String = "") {
+    // Check journal mode
+    var journalStmt: OpaquePointer?
+    if sqlite3_prepare_v2(db, "PRAGMA journal_mode;", -1, &journalStmt, nil) == SQLITE_OK {
+        if sqlite3_step(journalStmt) == SQLITE_ROW {
+            if let modePtr = sqlite3_column_text(journalStmt, 0) {
+                print("\(label)Journal mode: \(String(cString: modePtr))")
+            }
+        }
+        sqlite3_finalize(journalStmt)
+    } else {
+        print("\(label)PRAGMA failed: \(String(cString: sqlite3_errmsg(db)))")
+    }
+
+    // Try a simple query
+    var testStmt: OpaquePointer?
+    let testQuery = "SELECT COUNT(*) FROM ItemTable"
+    let prepResult = sqlite3_prepare_v2(db, testQuery, -1, &testStmt, nil)
+    if prepResult == SQLITE_OK {
+        if sqlite3_step(testStmt) == SQLITE_ROW {
+            let count = sqlite3_column_int(testStmt, 0)
+            print("\(label)ItemTable row count: \(count)")
+        }
+        sqlite3_finalize(testStmt)
+    } else {
+        let errorMsg = String(cString: sqlite3_errmsg(db))
+        print("\(label)Query failed: \(errorMsg)")
+    }
+}
+
 func testCursorDB(dateString: String?) {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     let globalDBPath = "\(home)/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
     let workspaceStoragePath = "\(home)/Library/Application Support/Cursor/User/workspaceStorage"
 
     print("=== Cursor DB Test ===")
+    print("Home: \(home)")
     print("Global DB: \(globalDBPath)")
+    print("Workspace Storage: \(workspaceStoragePath)")
+    print()
+
+    // Check if paths exist
+    print("=== Path Checks ===")
+    let cursorBasePath = "\(home)/Library/Application Support/Cursor"
+    print("Cursor base dir exists: \(FileManager.default.fileExists(atPath: cursorBasePath))")
+    print("Global DB exists: \(FileManager.default.fileExists(atPath: globalDBPath))")
+    print("Workspace storage exists: \(FileManager.default.fileExists(atPath: workspaceStoragePath))")
+
+    // Check if we can read the directory
+    if let contents = try? FileManager.default.contentsOfDirectory(atPath: cursorBasePath) {
+        print("Cursor dir contents: \(contents)")
+    } else {
+        print("ERROR: Cannot read Cursor directory (permission denied?)")
+    }
     print()
 
     guard FileManager.default.fileExists(atPath: globalDBPath) else {
         print("ERROR: Cursor database not found!")
         return
     }
+
+    // Check WAL files
+    let walPath = globalDBPath + "-wal"
+    let shmPath = globalDBPath + "-shm"
+    print("WAL file exists: \(FileManager.default.fileExists(atPath: walPath))")
+    print("SHM file exists: \(FileManager.default.fileExists(atPath: shmPath))")
+
+    // Check if files are readable
+    print("DB readable: \(FileManager.default.isReadableFile(atPath: globalDBPath))")
+    print("WAL readable: \(FileManager.default.isReadableFile(atPath: walPath))")
+    print("SHM readable: \(FileManager.default.isReadableFile(atPath: shmPath))")
+    print()
+
+    // Try to open DB with different modes
+    print("=== Database Access Test ===")
+
+    // Method 1: Normal readonly
+    print("Method 1: READONLY mode")
+    var testDB: OpaquePointer?
+    var flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+    var result = sqlite3_open_v2(globalDBPath, &testDB, flags, nil)
+    if result == SQLITE_OK {
+        print("  Opened successfully")
+        testQueryDB(testDB, label: "  ")
+        sqlite3_close(testDB)
+    } else {
+        print("  ERROR: \(String(cString: sqlite3_errmsg(testDB)))")
+        sqlite3_close(testDB)
+    }
+
+    // Method 2: URI with immutable
+    print("Method 2: URI immutable mode")
+    let uriPath = "file:\(globalDBPath)?immutable=1"
+    flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
+    result = sqlite3_open_v2(uriPath, &testDB, flags, nil)
+    if result == SQLITE_OK {
+        print("  Opened successfully")
+        testQueryDB(testDB, label: "  ")
+        sqlite3_close(testDB)
+    } else {
+        print("  ERROR: \(String(cString: sqlite3_errmsg(testDB)))")
+        sqlite3_close(testDB)
+    }
+
+    // Method 3: Copy DB to temp and open
+    print("Method 3: Copy to temp location")
+    let tempPath = "/tmp/cursor_state_copy.vscdb"
+    do {
+        if FileManager.default.fileExists(atPath: tempPath) {
+            try FileManager.default.removeItem(atPath: tempPath)
+        }
+        try FileManager.default.copyItem(atPath: globalDBPath, toPath: tempPath)
+        print("  Copied to \(tempPath)")
+
+        flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        result = sqlite3_open_v2(tempPath, &testDB, flags, nil)
+        if result == SQLITE_OK {
+            print("  Opened successfully")
+            testQueryDB(testDB, label: "  ")
+            sqlite3_close(testDB)
+        } else {
+            print("  ERROR: \(String(cString: sqlite3_errmsg(testDB)))")
+            sqlite3_close(testDB)
+        }
+
+        try FileManager.default.removeItem(atPath: tempPath)
+    } catch {
+        print("  ERROR copying: \(error)")
+    }
+
+    print()
 
     // Show daily stats
     print("=== Daily Stats (from ItemTable) ===")
