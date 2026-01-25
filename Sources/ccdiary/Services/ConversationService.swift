@@ -345,8 +345,8 @@ actor ConversationService {
             return []
         }
 
-        // For large files (>10MB), use binary search approach
-        if fileSize > 10_000_000 {
+        // For large files (>5MB), use binary search approach
+        if fileSize > 5_000_000 {
             return Self.readEntriesFromLargeFile(fileURL, datePrefix: datePrefix, fileSize: fileSize)
         }
 
@@ -556,6 +556,7 @@ actor ConversationService {
     }
 
     /// Lightweight entry for statistics - only decodes required fields
+    /// Used for validation and fallback
     private struct StatsEntry: Decodable {
         let type: String
         let message: StatsMessage?
@@ -605,6 +606,27 @@ actor ConversationService {
         var textLength: Int {
             message?.content.textLength ?? 0
         }
+    }
+
+    /// Hybrid stats extraction: fast byte pattern filter + JSON decode for accuracy
+    /// Returns (isValidMessage, approximateCharCount)
+    private static func extractStatsFromLine(_ lineData: Data) -> (isValid: Bool, charCount: Int) {
+        // Quick byte pattern filter (rejects ~80% of lines without JSON parsing)
+        let typeUserPattern = Data("\"type\":\"user\"".utf8)
+        let typeAssistantPattern = Data("\"type\":\"assistant\"".utf8)
+
+        // Must be user or assistant type
+        let isUser = lineData.range(of: typeUserPattern) != nil
+        let isAssistant = lineData.range(of: typeAssistantPattern) != nil
+        guard isUser || isAssistant else { return (false, 0) }
+
+        // Passed filter - now do accurate JSON decode
+        let decoder = JSONDecoder()
+        guard let entry = try? decoder.decode(StatsEntry.self, from: lineData),
+              entry.isValidForStats else {
+            return (false, 0)
+        }
+        return (true, entry.textLength)
     }
 
     /// Fast statistics reading - returns (messageCount, characterCount)
@@ -665,8 +687,8 @@ actor ConversationService {
 
         let fileSizeMB = Double(fileSize) / 1_000_000.0
 
-        // For large files (>10MB), use binary search approach
-        if fileSize > 10_000_000 {
+        // For large files (>5MB), use binary search approach
+        if fileSize > 5_000_000 {
             let result = parseStatsFromLargeFile(fileURL, datePrefix: datePrefix, fileSize: fileSize)
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             logger.notice("    file(binary): \(elapsed, format: .fixed(precision: 1))ms, \(fileSizeMB, format: .fixed(precision: 2))MB, \(result.messageCount) msgs - \(fileURL.lastPathComponent)")
@@ -684,7 +706,6 @@ actor ConversationService {
         }
 
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
-        let decoder = JSONDecoder()
 
         var messageCount = 0
         var characterCount = 0
@@ -692,10 +713,10 @@ actor ConversationService {
         for line in lines {
             guard lineMatchesDate(String(line), datePrefix: datePrefix) else { continue }
             let lineData = Data(line.utf8)
-            if let entry = try? decoder.decode(StatsEntry.self, from: lineData),
-               entry.isValidForStats {
+            let stats = Self.extractStatsFromLine(lineData)
+            if stats.isValid {
                 messageCount += 1
-                characterCount += entry.textLength
+                characterCount += stats.charCount
             }
         }
 
@@ -727,7 +748,6 @@ actor ConversationService {
         try? fileHandle.seek(toOffset: safeStart)
 
 
-        let decoder = JSONDecoder()
         var messageCount = 0
         var characterCount = 0
 
@@ -781,10 +801,10 @@ actor ConversationService {
                 if lineMatchesDate(line, datePrefix: datePrefix) {
                     foundAnyMatch = true
                     let lineData = Data(line.utf8)
-                    if let entry = try? decoder.decode(StatsEntry.self, from: lineData),
-                       entry.isValidForStats {
+                    let stats = Self.extractStatsFromLine(lineData)
+                    if stats.isValid {
                         messageCount += 1
-                        characterCount += entry.textLength
+                        characterCount += stats.charCount
                     }
                 }
             }
