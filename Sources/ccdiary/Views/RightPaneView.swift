@@ -242,10 +242,15 @@ struct RightPaneView: View {
 struct ProjectBadgesFlow: View {
     let projects: [ProjectSummary]
 
+    private var hasMultipleSources: Bool {
+        let sources = Set(projects.map { $0.source })
+        return sources.count > 1
+    }
+
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(projects) { project in
-                ProjectBadge(project: project)
+                ProjectBadge(project: project, showIcon: hasMultipleSources)
             }
         }
     }
@@ -253,9 +258,29 @@ struct ProjectBadgesFlow: View {
 
 struct ProjectBadge: View {
     let project: ProjectSummary
+    var showIcon: Bool = true
+
+    private var appIcon: NSImage {
+        switch project.source {
+        case .claudeCode:
+            return AppIconHelper.icon(for: "Claude")
+        case .cursor:
+            return AppIconHelper.icon(for: "Cursor")
+        case .all:
+            return NSWorkspace.shared.icon(for: .applicationBundle)
+        }
+    }
 
     var body: some View {
         HStack(spacing: 6) {
+            // App icon (only show when multiple sources exist)
+            if showIcon {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 14, height: 14)
+            }
+
             // Project name
             Text(project.name)
                 .font(.system(size: 12, weight: .semibold))
