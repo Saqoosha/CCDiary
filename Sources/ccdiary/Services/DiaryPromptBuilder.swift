@@ -42,7 +42,7 @@ enum DiaryPromptBuilder {
         prompt += "## 総入力数: \(activity.totalInputs)\n\n"
 
         for project in activity.projects {
-            prompt += "### プロジェクト: \(project.name)\n"
+            prompt += "### \(project.name)\n"
             prompt += "パス: \(project.path)\n"
             prompt += "作業時間: \(project.formattedTimeRange)\n"
             prompt += "メッセージ数: \(project.stats.usedMessages)/\(project.stats.totalMessages)\n\n"
