@@ -100,6 +100,9 @@ final class DiaryViewModel {
     var currentDayStatistics: DayStatistics?
     var currentDiary: DiaryEntry?
 
+    // Project selection for diary generation (paths of selected projects)
+    var selectedProjects: Set<String> = []
+
     // Loading states
     var isLoadingInitial = false
     var isLoadingDate = false
@@ -252,6 +255,7 @@ final class DiaryViewModel {
         // Reset immediately to avoid showing stale data
         currentDayStatistics = nil
         currentDiary = nil
+        selectedProjects = []
 
         // Load diary if exists
         do {
@@ -267,6 +271,11 @@ final class DiaryViewModel {
             // Remove from activity dates if no actual messages
             if let stats = currentDayStatistics, stats.messageCount == 0 {
                 datesWithActivity.remove(dateString)
+            }
+
+            // Select all projects by default
+            if let stats = currentDayStatistics {
+                selectedProjects = Set(stats.projects.map { $0.path })
             }
         } catch {
             currentDayStatistics = nil
@@ -284,11 +293,19 @@ final class DiaryViewModel {
         generationProgress = "Aggregating activity data..."
 
         do {
-            let activity = try await aggregator.aggregateForDate(targetDate)
+            let fullActivity = try await aggregator.aggregateForDate(targetDate)
+
+            // Filter to only selected projects
+            let filteredProjects = fullActivity.projects.filter { selectedProjects.contains($0.path) }
+            let activity = DailyActivity(
+                date: fullActivity.date,
+                projects: filteredProjects,
+                totalInputs: fullActivity.totalInputs
+            )
 
             if activity.projects.isEmpty {
                 isGenerating = false
-                showErrorMessage("No activity found for \(activity.formattedDate)")
+                showErrorMessage("No projects selected for \(activity.formattedDate)")
                 return
             }
 

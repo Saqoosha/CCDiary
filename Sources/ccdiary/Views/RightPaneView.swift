@@ -149,10 +149,10 @@ struct RightPaneView: View {
     private var generatePrompt: some View {
         VStack(spacing: 16) {
             Spacer()
-                .frame(height: 40)
+                .frame(height: 20)
 
             Image(systemName: "sparkles")
-                .font(.system(size: 36))
+                .font(.system(size: 32))
                 .foregroundStyle(.quaternary)
 
             VStack(spacing: 4) {
@@ -160,9 +160,38 @@ struct RightPaneView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
 
-                Text("Generate from your activity")
+                Text("Select projects to include")
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
+            }
+
+            // Project selection list
+            if let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Projects")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            // Toggle all
+                            if viewModel.selectedProjects.count == stats.projects.count {
+                                viewModel.selectedProjects.removeAll()
+                            } else {
+                                viewModel.selectedProjects = Set(stats.projects.map { $0.path })
+                            }
+                        } label: {
+                            Text(viewModel.selectedProjects.count == stats.projects.count ? "Deselect All" : "Select All")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                    }
+
+                    ProjectSelectionList(projects: stats.projects, viewModel: viewModel)
+                }
+                .padding(.horizontal, 24)
+                .frame(maxWidth: 400)
             }
 
             Button {
@@ -175,11 +204,12 @@ struct RightPaneView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
+            .disabled(viewModel.selectedProjects.isEmpty)
 
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        .padding(.vertical, 20)
     }
 
     // MARK: - No Activity View
@@ -304,6 +334,83 @@ struct ProjectBadge: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         )
+    }
+}
+
+// MARK: - Project Selection List
+
+struct ProjectSelectionList: View {
+    let projects: [ProjectSummary]
+    @Bindable var viewModel: DiaryViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(projects) { project in
+                ProjectSelectionRow(
+                    project: project,
+                    isSelected: viewModel.selectedProjects.contains(project.path),
+                    onToggle: {
+                        if viewModel.selectedProjects.contains(project.path) {
+                            viewModel.selectedProjects.remove(project.path)
+                        } else {
+                            viewModel.selectedProjects.insert(project.path)
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+struct ProjectSelectionRow: View {
+    let project: ProjectSummary
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    private var appIcon: NSImage {
+        switch project.source {
+        case .claudeCode:
+            return AppIconHelper.icon(for: "Claude")
+        case .cursor:
+            return AppIconHelper.icon(for: "Cursor")
+        case .all:
+            return NSWorkspace.shared.icon(for: .applicationBundle)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Checkbox
+            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 14))
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+
+            // App icon
+            Image(nsImage: appIcon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
+
+            // Project name
+            Text(project.name)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isSelected ? .primary : .secondary)
+
+            Spacer()
+
+            // Duration
+            Text(project.formattedDuration)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle()
+        }
     }
 }
 
