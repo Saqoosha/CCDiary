@@ -20,7 +20,7 @@ actor ClaudeCLIService {
               "tasks": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "作業内容のリスト"
+                "description": "作業内容のリスト。各項目は1行で簡潔に。ネストや改行は禁止"
               }
             },
             "required": ["name", "tasks"]
