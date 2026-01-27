@@ -10,12 +10,18 @@ struct RightPaneView: View {
     private let claudeIcon = AppIconHelper.icon(for: "Claude")
     private let cursorIcon = AppIconHelper.icon(for: "Cursor")
 
+    // Show header only when diary exists or no activity
+    private var shouldShowHeader: Bool {
+        viewModel.currentDiary != nil || viewModel.currentDayStatistics == nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Sticky header with date and stats
-            headerSection
-
-            Divider()
+            // Sticky header with date and stats (hide for pre-generation view)
+            if shouldShowHeader {
+                headerSection
+                Divider()
+            }
 
             // Main content (don't show loading during index building - overlay handles that)
             if viewModel.isLoadingDate && !viewModel.isBuildingIndex {
@@ -104,8 +110,9 @@ struct RightPaneView: View {
 
     private var mainScrollContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Projects section (fixed height, no scroll)
-            if let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
+            // Projects badges (only show when diary exists)
+            if viewModel.currentDiary != nil,
+               let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
                 projectsSection(projects: stats.projects)
             }
 
@@ -118,8 +125,8 @@ struct RightPaneView: View {
 
     private func projectsSection(projects: [ProjectSummary]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Badge flow layout for projects
-            ProjectBadgesFlow(projects: projects)
+            // Badge flow layout for projects with selection
+            ProjectBadgesFlow(projects: projects, viewModel: viewModel)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
 
@@ -147,69 +154,7 @@ struct RightPaneView: View {
     // MARK: - Generate Prompt
 
     private var generatePrompt: some View {
-        VStack(spacing: 16) {
-            Spacer()
-                .frame(height: 20)
-
-            Image(systemName: "sparkles")
-                .font(.system(size: 32))
-                .foregroundStyle(.quaternary)
-
-            VStack(spacing: 4) {
-                Text("No diary yet")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Text("Select projects to include")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tertiary)
-            }
-
-            // Project selection list
-            if let stats = viewModel.currentDayStatistics, !stats.projects.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Projects")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            // Toggle all
-                            if viewModel.selectedProjects.count == stats.projects.count {
-                                viewModel.selectedProjects.removeAll()
-                            } else {
-                                viewModel.selectedProjects = Set(stats.projects.map { $0.path })
-                            }
-                        } label: {
-                            Text(viewModel.selectedProjects.count == stats.projects.count ? "Deselect All" : "Select All")
-                                .font(.system(size: 11))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
-                    }
-
-                    ProjectSelectionList(projects: stats.projects, viewModel: viewModel)
-                }
-                .padding(.horizontal, 24)
-                .frame(maxWidth: 400)
-            }
-
-            Button {
-                Task {
-                    await viewModel.generateDiary()
-                }
-            } label: {
-                Label("Generate", systemImage: "sparkles")
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .disabled(viewModel.selectedProjects.isEmpty)
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        ActivityReportView(viewModel: viewModel)
     }
 
     // MARK: - No Activity View
@@ -271,6 +216,7 @@ struct RightPaneView: View {
 
 struct ProjectBadgesFlow: View {
     let projects: [ProjectSummary]
+    @Bindable var viewModel: DiaryViewModel
 
     private var hasMultipleSources: Bool {
         let sources = Set(projects.map { $0.source })
@@ -280,7 +226,18 @@ struct ProjectBadgesFlow: View {
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(projects) { project in
-                ProjectBadge(project: project, showIcon: hasMultipleSources)
+                ProjectBadge(
+                    project: project,
+                    showIcon: hasMultipleSources,
+                    isSelected: viewModel.selectedProjects.contains(project.path),
+                    onToggle: {
+                        if viewModel.selectedProjects.contains(project.path) {
+                            viewModel.selectedProjects.remove(project.path)
+                        } else {
+                            viewModel.selectedProjects.insert(project.path)
+                        }
+                    }
+                )
             }
         }
     }
@@ -289,6 +246,8 @@ struct ProjectBadgesFlow: View {
 struct ProjectBadge: View {
     let project: ProjectSummary
     var showIcon: Bool = true
+    var isSelected: Bool = true
+    var onToggle: (() -> Void)? = nil
 
     private var appIcon: NSImage {
         switch project.source {
@@ -303,6 +262,11 @@ struct ProjectBadge: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // Checkbox
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 12))
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+
             // App icon (only show when multiple sources exist)
             if showIcon {
                 Image(nsImage: appIcon)
@@ -314,26 +278,315 @@ struct ProjectBadge: View {
             // Project name
             Text(project.name)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(isSelected ? .primary : .secondary)
 
             // Time range
             Text(project.formattedTimeRange)
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isSelected ? .secondary : .tertiary)
 
             // Duration
             Text(project.formattedDuration)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(Color.primary.opacity(0.06))
+        .background(isSelected ? Color.primary.opacity(0.06) : Color.primary.opacity(0.02))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                .stroke(isSelected ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06), lineWidth: 0.5)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle?()
+        }
+    }
+}
+
+// MARK: - Activity Report View (Pre-generation)
+
+struct ActivityReportView: View {
+    @Bindable var viewModel: DiaryViewModel
+
+    private var stats: DayStatistics? { viewModel.currentDayStatistics }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack {
+                    Spacer(minLength: 0)
+
+                    // Report container
+                    VStack(spacing: 24) {
+                        // Header: Date & Label
+                        reportHeader
+
+                        // Stats summary
+                        if let stats = stats {
+                            statsSummary(stats: stats)
+                        }
+
+                        // Divider
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.08))
+                            .frame(height: 1)
+                            .padding(.horizontal, 8)
+
+                        // Project selection
+                        if let stats = stats, !stats.projects.isEmpty {
+                            projectSection(stats: stats)
+                        }
+
+                        // Generate button
+                        generateButton
+                    }
+                    .padding(28)
+                    .frame(maxWidth: 420)
+                    .background {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                            .shadow(color: .black.opacity(0.08), radius: 20, y: 8)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                            )
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+        }
+    }
+
+    // MARK: - Report Header
+
+    private var reportHeader: some View {
+        VStack(spacing: 6) {
+            // Small label
+            Text("ACTIVITY REPORT")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(1.5)
+                .foregroundStyle(.secondary)
+
+            // Date
+            Text(DateFormatting.japaneseDateWithWeekday.string(from: viewModel.selectedDate))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    // MARK: - Stats Summary
+
+    private func statsSummary(stats: DayStatistics) -> some View {
+        HStack(spacing: 0) {
+            statItem(
+                value: stats.projectCount,
+                label: "Projects",
+                icon: "folder.fill"
+            )
+
+            Divider()
+                .frame(height: 32)
+
+            statItem(
+                value: stats.sessionCount,
+                label: "Sessions",
+                icon: "bubble.left.and.bubble.right.fill"
+            )
+
+            Divider()
+                .frame(height: 32)
+
+            statItem(
+                value: stats.messageCount,
+                label: "Messages",
+                icon: "text.bubble.fill"
+            )
+        }
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.03))
+        )
+    }
+
+    private func statItem(value: Int, label: String, icon: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text("\(value)")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+            }
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Project Section
+
+    private func projectSection(stats: DayStatistics) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Section header
+            HStack {
+                Text("Include in diary")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if viewModel.selectedProjects.count == stats.projects.count {
+                            viewModel.selectedProjects.removeAll()
+                        } else {
+                            viewModel.selectedProjects = Set(stats.projects.map { $0.path })
+                        }
+                    }
+                } label: {
+                    Text(viewModel.selectedProjects.count == stats.projects.count ? "None" : "All")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Project list
+            VStack(spacing: 2) {
+                ForEach(stats.projects) { project in
+                    ReportProjectRow(
+                        project: project,
+                        isSelected: viewModel.selectedProjects.contains(project.path),
+                        onToggle: {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                if viewModel.selectedProjects.contains(project.path) {
+                                    viewModel.selectedProjects.remove(project.path)
+                                } else {
+                                    viewModel.selectedProjects.insert(project.path)
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Generate Button
+
+    private var generateButton: some View {
+        Button {
+            Task {
+                await viewModel.generateDiary()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Generate Diary")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(viewModel.selectedProjects.isEmpty
+                          ? Color.accentColor.opacity(0.3)
+                          : Color.accentColor)
+            )
+            .foregroundStyle(.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.selectedProjects.isEmpty)
+    }
+}
+
+// MARK: - Report Project Row
+
+struct ReportProjectRow: View {
+    let project: ProjectSummary
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    private var appIcon: NSImage {
+        switch project.source {
+        case .claudeCode:
+            return AppIconHelper.icon(for: "Claude")
+        case .cursor:
+            return AppIconHelper.icon(for: "Cursor")
+        case .all:
+            return NSWorkspace.shared.icon(for: .applicationBundle)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Checkbox
+            ZStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .frame(width: 18, height: 18)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(isSelected ? Color.clear : Color.primary.opacity(0.2), lineWidth: 1.5)
+                    )
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+
+            // App icon
+            Image(nsImage: appIcon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 20, height: 20)
+                .opacity(isSelected ? 1 : 0.5)
+
+            // Project info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(project.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .lineLimit(1)
+
+                Text(project.formattedTimeRange)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+
+            // Duration badge
+            Text(project.formattedDuration)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04))
+                )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle()
+        }
     }
 }
 
@@ -398,15 +651,20 @@ struct ProjectSelectionRow: View {
 
             Spacer()
 
+            // Time range
+            Text(project.formattedTimeRange)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.tertiary)
+
             // Duration
             Text(project.formattedDuration)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture {
             onToggle()
