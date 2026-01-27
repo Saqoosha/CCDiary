@@ -122,7 +122,8 @@ final class DiaryViewModel {
 
     // Stored properties that sync with UserDefaults
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
-    var model: String = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
+    var cliModel: String = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
+    var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
     @ObservationIgnored
@@ -163,11 +164,13 @@ final class DiaryViewModel {
 
     private func refreshSettings() {
         let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
-        let newModel = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
+        let newCLIModel = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
+        let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
         if aiProvider != newProvider { aiProvider = newProvider }
-        if model != newModel { model = newModel }
+        if cliModel != newCLIModel { cliModel = newCLIModel }
+        if apiModel != newAPIModel { apiModel = newAPIModel }
         if diariesDirectoryPath != newPath {
             diariesDirectoryPath = newPath
             storage = nil
@@ -299,7 +302,7 @@ final class DiaryViewModel {
             case .claudeCLI:
                 content = try await claudeCLI.generateDiary(
                     activity: activity,
-                    model: model
+                    model: cliModel
                 )
             case .claudeAPI:
                 guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
@@ -307,7 +310,8 @@ final class DiaryViewModel {
                 }
                 content = try await claudeAPI.generateDiary(
                     activity: activity,
-                    apiKey: apiKey
+                    apiKey: apiKey,
+                    model: apiModel
                 )
             case .gemini:
                 guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {
@@ -418,7 +422,7 @@ final class DiaryViewModel {
                 case .claudeCLI:
                     return try await claudeCLI.generateDiary(
                         activity: activity,
-                        model: model
+                        model: cliModel
                     )
                 case .claudeAPI:
                     guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
@@ -426,7 +430,8 @@ final class DiaryViewModel {
                     }
                     return try await claudeAPI.generateDiary(
                         activity: activity,
-                        apiKey: apiKey
+                        apiKey: apiKey,
+                        model: apiModel
                     )
                 case .gemini:
                     guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {

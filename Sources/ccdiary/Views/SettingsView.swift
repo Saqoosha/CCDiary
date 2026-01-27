@@ -2,7 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeCLI.rawValue
-    @AppStorage("claudeModel") private var model = "sonnet"
+    @AppStorage("claudeModel") private var cliModel = "sonnet"
+    @AppStorage("claudeAPIModel") private var apiModel = "claude-sonnet-4-20250514"
     @AppStorage("diariesDirectory") private var diariesDirectory = ""
 
     @State private var claudeAPIKey = ""
@@ -14,115 +15,66 @@ struct SettingsView: View {
         AIProvider(rawValue: aiProviderRaw) ?? .claudeCLI
     }
 
-    private let availableModels = [
-        ("sonnet", "Claude Sonnet (Recommended)"),
+    private let cliModels = [
+        ("sonnet", "Claude Sonnet"),
         ("opus", "Claude Opus"),
-        ("haiku", "Claude Haiku (Faster)")
+        ("haiku", "Claude Haiku")
+    ]
+
+    private let apiModels = [
+        ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
+        ("claude-opus-4-20250514", "Claude Opus 4"),
+        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku")
     ]
 
     var body: some View {
-        Form {
-            Section {
-                Picker("AI Provider", selection: $aiProviderRaw) {
-                    ForEach(AIProvider.allCases, id: \.rawValue) { provider in
-                        Text(provider.displayName).tag(provider.rawValue)
-                    }
-                }
-            } header: {
+        VStack(spacing: 0) {
+            // Provider Selection
+            VStack(alignment: .leading, spacing: 8) {
                 Text("AI Provider")
-            } footer: {
-                Text(providerDescription)
-            }
-
-            if aiProvider == .claudeCLI {
-                Section {
-                    Picker("Model", selection: $model) {
-                        ForEach(availableModels, id: \.0) { modelId, displayName in
-                            Text(displayName).tag(modelId)
-                        }
-                    }
-                } header: {
-                    Text("Claude Model")
-                } footer: {
-                    Text("Uses Claude Code CLI for generation (no API key needed)")
-                }
-            }
-
-            if aiProvider == .claudeAPI {
-                Section {
-                    SecureField("Claude API Key", text: $claudeAPIKey)
-                        .textFieldStyle(.roundedBorder)
-
-                    HStack {
-                        Button("Save to Keychain") {
-                            saveAPIKey(claudeAPIKey, service: KeychainHelper.claudeAPIService)
-                        }
-                        .disabled(claudeAPIKey.isEmpty)
-
-                        if KeychainHelper.load(service: KeychainHelper.claudeAPIService) != nil {
-                            Text("✓ Saved")
-                                .foregroundStyle(.green)
-                                .font(.caption)
-                        }
-                    }
-                } header: {
-                    Text("Claude API Key")
-                } footer: {
-                    Text("Get your API key from console.anthropic.com")
-                }
-            }
-
-            if aiProvider == .gemini {
-                Section {
-                    SecureField("Gemini API Key", text: $geminiAPIKey)
-                        .textFieldStyle(.roundedBorder)
-
-                    HStack {
-                        Button("Save to Keychain") {
-                            saveAPIKey(geminiAPIKey, service: KeychainHelper.geminiAPIService)
-                        }
-                        .disabled(geminiAPIKey.isEmpty)
-
-                        if KeychainHelper.load(service: KeychainHelper.geminiAPIService) != nil {
-                            Text("✓ Saved")
-                                .foregroundStyle(.green)
-                                .font(.caption)
-                        }
-                    }
-                } header: {
-                    Text("Gemini API Key")
-                } footer: {
-                    Text("Get your API key from aistudio.google.com")
-                }
-            }
-
-            Section {
-                HStack {
-                    TextField("Diaries Folder", text: $diariesDirectory)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button("Browse...") {
-                        selectDirectory()
-                    }
-                }
-
-                if !diariesDirectory.isEmpty {
-                    Button("Reset to Default") {
-                        diariesDirectory = ""
-                    }
+                    .font(.headline)
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    ForEach(AIProvider.allCases, id: \.rawValue) { provider in
+                        ProviderButton(
+                            title: provider.displayName,
+                            subtitle: providerSubtitle(provider),
+                            isSelected: aiProvider == provider
+                        ) {
+                            aiProviderRaw = provider.rawValue
+                        }
+                    }
                 }
-            } header: {
-                Text("Storage")
-            } footer: {
-                Text(diariesDirectory.isEmpty
-                     ? "Using default location (current directory/diaries)"
-                     : "Diaries will be saved to: \(diariesDirectory)")
             }
+            .padding()
+
+            Divider()
+
+            // Provider-specific configuration
+            VStack(alignment: .leading, spacing: 12) {
+                switch aiProvider {
+                case .claudeCLI:
+                    claudeCLIConfig
+                case .claudeAPI:
+                    claudeAPIConfig
+                case .gemini:
+                    geminiConfig
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            // Storage configuration
+            storageConfig
+                .padding()
+
+            Spacer(minLength: 0)
         }
-        .formStyle(.grouped)
-        .frame(width: 450, height: 400)
-        .navigationTitle("Settings")
+        .frame(width: 480, height: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
         .alert("API Key", isPresented: $showingSaveConfirmation) {
             Button("OK") { }
         } message: {
@@ -133,14 +85,152 @@ struct SettingsView: View {
         }
     }
 
-    private var providerDescription: String {
-        switch aiProvider {
-        case .claudeCLI:
-            return "Uses Claude Code CLI (slower but no API key needed)"
-        case .claudeAPI:
-            return "Uses Claude API directly (faster, requires API key)"
-        case .gemini:
-            return "Uses Gemini 2.5 Flash (fastest, requires API key)"
+    // MARK: - Provider Configs
+
+    private var claudeCLIConfig: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Model")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Picker("", selection: $cliModel) {
+                ForEach(cliModels, id: \.0) { modelId, displayName in
+                    Text(displayName).tag(modelId)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text("Uses Claude Code CLI for generation. No API key required.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var claudeAPIConfig: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Model")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Picker("", selection: $apiModel) {
+                    ForEach(apiModels, id: \.0) { modelId, displayName in
+                        Text(displayName).tag(modelId)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("API Key")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
+                    if KeychainHelper.load(service: KeychainHelper.claudeAPIService) != nil {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    SecureField("sk-ant-...", text: $claudeAPIKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button("Save") {
+                        saveAPIKey(claudeAPIKey, service: KeychainHelper.claudeAPIService)
+                    }
+                    .disabled(claudeAPIKey.isEmpty)
+                }
+
+                Link("Get API key from console.anthropic.com",
+                     destination: URL(string: "https://console.anthropic.com")!)
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+            }
+        }
+    }
+
+    private var geminiConfig: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("API Key")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                if KeychainHelper.load(service: KeychainHelper.geminiAPIService) != nil {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+            }
+
+            HStack(spacing: 8) {
+                SecureField("AI...", text: $geminiAPIKey)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Save") {
+                    saveAPIKey(geminiAPIKey, service: KeychainHelper.geminiAPIService)
+                }
+                .disabled(geminiAPIKey.isEmpty)
+            }
+
+            Text("Uses Gemini 2.5 Flash model.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+
+            Link("Get API key from aistudio.google.com",
+                 destination: URL(string: "https://aistudio.google.com")!)
+                .font(.caption)
+                .foregroundStyle(.blue)
+        }
+    }
+
+    private var storageConfig: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Storage")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                TextField("Default: ./diaries", text: $diariesDirectory)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Browse") {
+                    selectDirectory()
+                }
+
+                if !diariesDirectory.isEmpty {
+                    Button {
+                        diariesDirectory = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !diariesDirectory.isEmpty {
+                Text(diariesDirectory)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func providerSubtitle(_ provider: AIProvider) -> String {
+        switch provider {
+        case .claudeCLI: return "No API key"
+        case .claudeAPI: return "Fast"
+        case .gemini: return "Fastest"
         }
     }
 
@@ -175,6 +265,39 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url {
             diariesDirectory = url.path
         }
+    }
+}
+
+// MARK: - Provider Button Component
+
+struct ProviderButton: View {
+    let title: String
+    let subtitle: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? Color.clear : Color(nsColor: .separatorColor), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? .white : .primary)
     }
 }
 
