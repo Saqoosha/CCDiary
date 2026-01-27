@@ -46,7 +46,6 @@
 		8EF47B8D543F7D8CC9740BD1 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F874CA288B7565520139B38 /* KeychainHelper.swift */; };
 		930C13900B3A2FB0083768A5 /* github-markdown.css in Resources */ = {isa = PBXBuildFile; fileRef = 0277523CB7D2CF3BB3738127 /* github-markdown.css */; };
 		93D93E6AEE74F32CA7340761 /* appicon_foreground.png in Resources */ = {isa = PBXBuildFile; fileRef = 030B10760AF7D23B95B11BAF /* appicon_foreground.png */; };
-		97993339C03807A4DB324175 /* ClaudeCLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */; };
 		98A8BCC020D02A7720B32FF0 /* marked.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 4A0EA64395D76BDF7EC0E17D /* marked.min.js */; };
 		9BE77B65E44303C753103986 /* CursorHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0275FBB046FF6CAA498451 /* CursorHistoryEntry.swift */; };
 		9E46AA2C87CA1B5EE03ADBE6 /* ParseResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5326EF996BA55A4E9E5C1900 /* ParseResult.swift */; };
@@ -54,7 +53,6 @@
 		AF60FC549BFA86A65DB2243E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05E0C94F1A0978FD8E4EDB41 /* SettingsView.swift */; };
 		AFD54A9DBAD67F398B2A1AEE /* CursorHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0275FBB046FF6CAA498451 /* CursorHistoryEntry.swift */; };
 		B230955C83CD121FFBCB25E2 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B48213BA8101614F9F69F07D /* main.swift */; };
-		B261BA3F54C996D72085BA44 /* ClaudeCLIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */; };
 		B5A14183BF42D610598BC90A /* CursorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21275DAA02868F83A96C6CA1 /* CursorService.swift */; };
 		C286AF969FF37FD3C1358308 /* AggregatorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2762306800800B4CDE03B9F /* AggregatorService.swift */; };
 		C2AC760760BCA92BD8DE74C6 /* DiaryGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956E0674B4B509031D4646E4 /* DiaryGenerator.swift */; };
@@ -108,7 +106,6 @@
 		B5314682DE84B5E01CDC701D /* MarkdownWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownWebView.swift; sourceTree = "<group>"; };
 		B80865C80BBA01DFE67487C0 /* ConversationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationService.swift; sourceTree = "<group>"; };
 		CB059580E4F63503968B6226 /* DiaryStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryStorage.swift; sourceTree = "<group>"; };
-		DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIService.swift; sourceTree = "<group>"; };
 		EA4144376F55B7E353430B37 /* DiaryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryEntry.swift; sourceTree = "<group>"; };
 		ECB5EC64051BDF02A4FFD615 /* benchmark */ = {isa = PBXFileReference; includeInIndex = 0; path = benchmark; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8399F84D7F53734869B10C2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -222,7 +219,6 @@
 			children = (
 				A2762306800800B4CDE03B9F /* AggregatorService.swift */,
 				32ACA2EFCB9520BE02EB7104 /* ClaudeAPIService.swift */,
-				DF1DE62BF8158AD595EF968E /* ClaudeCLIService.swift */,
 				B80865C80BBA01DFE67487C0 /* ConversationService.swift */,
 				21275DAA02868F83A96C6CA1 /* CursorService.swift */,
 				21034842C08E389FDBC922E1 /* DateFormatting.swift */,
@@ -365,7 +361,6 @@
 				C286AF969FF37FD3C1358308 /* AggregatorService.swift in Sources */,
 				EEFC7AD5B4D36B6E43B1D528 /* BenchmarkApp.swift in Sources */,
 				4CC352230B3BF0A812DCA137 /* ClaudeAPIService.swift in Sources */,
-				97993339C03807A4DB324175 /* ClaudeCLIService.swift in Sources */,
 				1681F692D3D08E377D220946 /* ConversationEntry.swift in Sources */,
 				8CD6344B6EA27369B053B0ED /* ConversationService.swift in Sources */,
 				AFD54A9DBAD67F398B2A1AEE /* CursorHistoryEntry.swift in Sources */,
@@ -397,7 +392,6 @@
 				59AD67FB5791FF3A85342F01 /* AggregatorService.swift in Sources */,
 				885D4B5465C3392624E665C0 /* CalendarGridView.swift in Sources */,
 				CA4E0D521D0981FAFAE34911 /* ClaudeAPIService.swift in Sources */,
-				B261BA3F54C996D72085BA44 /* ClaudeCLIService.swift in Sources */,
 				869A1DF9B699F0E086F2AED6 /* ContentView.swift in Sources */,
 				4558C982544D971C42D1C5A0 /* ConversationEntry.swift in Sources */,
 				16EC8B85A68928E0EDB02884 /* ConversationService.swift in Sources */,

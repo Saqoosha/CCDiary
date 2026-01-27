@@ -136,7 +136,7 @@ final class DiaryViewModel {
    │       ├── Filter by time range
    │       ├── Extract meaningful messages
    │       └── Truncate & limit messages
-   ├── AIService.generateDiary(activity)  // ClaudeCLI/ClaudeAPI/GeminiAPI
+   ├── AIService.generateDiary(activity)  // ClaudeAPI/GeminiAPI
    │   ├── Build prompt with project data
    │   ├── Call AI provider
    │   └── Post-process markdown
@@ -187,7 +187,6 @@ Multiple AI providers are supported for diary generation:
 
 | Service | Description |
 |---------|-------------|
-| `ClaudeCLIService` | Uses Claude Code CLI (no API key required) |
 | `ClaudeAPIService` | Direct Anthropic API calls |
 | `GeminiAPIService` | Google Gemini API |
 
@@ -326,7 +325,6 @@ ccdiary/
     ├── Services/
     │   ├── AggregatorService.swift
     │   ├── ClaudeAPIService.swift
-    │   ├── ClaudeCLIService.swift
     │   ├── ConversationService.swift
     │   ├── DateFormatting.swift
     │   ├── DiaryFormatter.swift

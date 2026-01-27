@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeCLI.rawValue
-    @AppStorage("claudeModel") private var cliModel = "haiku"
+    @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeAPI.rawValue
     @AppStorage("claudeAPIModel") private var apiModel = "claude-haiku-4-5-20251101"
     @AppStorage("geminiModel") private var geminiModel = "gemini-2.5-flash"
     @AppStorage("diariesDirectory") private var diariesDirectory = ""
@@ -13,14 +12,8 @@ struct SettingsView: View {
     @State private var saveConfirmationMessage = ""
 
     private var aiProvider: AIProvider {
-        AIProvider(rawValue: aiProviderRaw) ?? .claudeCLI
+        AIProvider(rawValue: aiProviderRaw) ?? .claudeAPI
     }
-
-    private let cliModels = [
-        ("haiku", "Haiku 4.5"),
-        ("sonnet", "Sonnet 4.5"),
-        ("opus", "Opus 4.5")
-    ]
 
     private let apiModels = [
         ("claude-haiku-4-5-20251101", "Haiku 4.5"),
@@ -60,8 +53,6 @@ struct SettingsView: View {
             // Provider-specific configuration
             VStack(alignment: .leading, spacing: 12) {
                 switch aiProvider {
-                case .claudeCLI:
-                    claudeCLIConfig
                 case .claudeAPI:
                     claudeAPIConfig
                 case .gemini:
@@ -92,26 +83,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Provider Configs
-
-    private var claudeCLIConfig: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Model")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-
-            Picker("", selection: $cliModel) {
-                ForEach(cliModels, id: \.0) { modelId, displayName in
-                    Text(displayName).tag(modelId)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            Text("Uses Claude Code CLI for generation. No API key required.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-    }
 
     private var claudeAPIConfig: some View {
         VStack(alignment: .leading, spacing: 12) {
