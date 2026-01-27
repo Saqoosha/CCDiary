@@ -235,11 +235,7 @@ struct ProjectBadgesFlow: View {
                     showIcon: hasMultipleSources,
                     isSelected: viewModel.selectedProjects.contains(project.path),
                     onToggle: {
-                        if viewModel.selectedProjects.contains(project.path) {
-                            viewModel.selectedProjects.remove(project.path)
-                        } else {
-                            viewModel.selectedProjects.insert(project.path)
-                        }
+                        viewModel.toggleProject(project.path)
                     }
                 )
             }
@@ -452,9 +448,9 @@ struct ActivityReportView: View {
 
                 Button {
                     if allProjectsSelected {
-                        viewModel.selectedProjects.removeAll()
+                        viewModel.deselectAllProjects()
                     } else {
-                        viewModel.selectedProjects = Set(stats.projects.map { $0.path })
+                        viewModel.selectAllProjects()
                     }
                 } label: {
                     Text(allProjectsSelected ? "Deselect All" : "Select All")
@@ -472,11 +468,7 @@ struct ActivityReportView: View {
                         project: project,
                         isSelected: viewModel.selectedProjects.contains(project.path),
                         onToggle: {
-                            if viewModel.selectedProjects.contains(project.path) {
-                                viewModel.selectedProjects.remove(project.path)
-                            } else {
-                                viewModel.selectedProjects.insert(project.path)
-                            }
+                            viewModel.toggleProject(project.path)
                         }
                     )
                 }

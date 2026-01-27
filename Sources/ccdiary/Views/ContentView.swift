@@ -103,6 +103,17 @@ final class DiaryViewModel {
     // Project selection for diary generation (paths of selected projects)
     var selectedProjects: Set<String> = []
 
+    // Excluded projects persisted across sessions
+    @ObservationIgnored
+    private var excludedProjects: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: "excludedProjects") ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: "excludedProjects")
+        }
+    }
+
     // Loading states
     var isLoadingInitial = false
     var isLoadingDate = false
@@ -279,14 +290,41 @@ final class DiaryViewModel {
                 datesWithActivity.remove(dateString)
             }
 
-            // Select all projects by default
+            // Select all projects except previously excluded ones
             if let stats = currentDayStatistics {
-                selectedProjects = Set(stats.projects.map { $0.path })
+                let allPaths = Set(stats.projects.map { $0.path })
+                selectedProjects = allPaths.subtracting(excludedProjects)
             }
         } catch {
             currentDayStatistics = nil
         }
         isLoadingDate = false
+    }
+
+    // MARK: - Project Selection
+
+    func toggleProject(_ path: String) {
+        if selectedProjects.contains(path) {
+            selectedProjects.remove(path)
+            excludedProjects.insert(path)
+        } else {
+            selectedProjects.insert(path)
+            excludedProjects.remove(path)
+        }
+    }
+
+    func selectAllProjects() {
+        guard let stats = currentDayStatistics else { return }
+        let allPaths = Set(stats.projects.map { $0.path })
+        selectedProjects = allPaths
+        excludedProjects.subtract(allPaths)
+    }
+
+    func deselectAllProjects() {
+        guard let stats = currentDayStatistics else { return }
+        let allPaths = Set(stats.projects.map { $0.path })
+        selectedProjects.removeAll()
+        excludedProjects.formUnion(allPaths)
     }
 
     // MARK: - Diary Generation
