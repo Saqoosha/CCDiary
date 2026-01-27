@@ -4,6 +4,7 @@ struct SettingsView: View {
     @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeCLI.rawValue
     @AppStorage("claudeModel") private var cliModel = "sonnet"
     @AppStorage("claudeAPIModel") private var apiModel = "claude-sonnet-4-20250514"
+    @AppStorage("geminiModel") private var geminiModel = "gemini-2.5-flash"
     @AppStorage("diariesDirectory") private var diariesDirectory = ""
 
     @State private var claudeAPIKey = ""
@@ -25,6 +26,12 @@ struct SettingsView: View {
         ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
         ("claude-opus-4-20250514", "Claude Opus 4"),
         ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku")
+    ]
+
+    private let geminiModels = [
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini-2.0-flash", "Gemini 2.0 Flash")
     ]
 
     var body: some View {
@@ -155,37 +162,49 @@ struct SettingsView: View {
     }
 
     private var geminiConfig: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("API Key")
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Model")
                     .font(.headline)
                     .foregroundStyle(.secondary)
 
-                if KeychainHelper.load(service: KeychainHelper.geminiAPIService) != nil {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.caption)
+                Picker("", selection: $geminiModel) {
+                    ForEach(geminiModels, id: \.0) { modelId, displayName in
+                        Text(displayName).tag(modelId)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
-            HStack(spacing: 8) {
-                SecureField("AI...", text: $geminiAPIKey)
-                    .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("API Key")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
 
-                Button("Save") {
-                    saveAPIKey(geminiAPIKey, service: KeychainHelper.geminiAPIService)
+                    if KeychainHelper.load(service: KeychainHelper.geminiAPIService) != nil {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
                 }
-                .disabled(geminiAPIKey.isEmpty)
+
+                HStack(spacing: 8) {
+                    SecureField("AI...", text: $geminiAPIKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button("Save") {
+                        saveAPIKey(geminiAPIKey, service: KeychainHelper.geminiAPIService)
+                    }
+                    .disabled(geminiAPIKey.isEmpty)
+                }
+
+                Link("Get API key from aistudio.google.com",
+                     destination: URL(string: "https://aistudio.google.com")!)
+                    .font(.caption)
+                    .foregroundStyle(.blue)
             }
-
-            Text("Uses Gemini 2.5 Flash model.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-
-            Link("Get API key from aistudio.google.com",
-                 destination: URL(string: "https://aistudio.google.com")!)
-                .font(.caption)
-                .foregroundStyle(.blue)
         }
     }
 

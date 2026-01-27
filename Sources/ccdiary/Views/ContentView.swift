@@ -124,6 +124,7 @@ final class DiaryViewModel {
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
     var cliModel: String = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
     var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
+    var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
     @ObservationIgnored
@@ -166,11 +167,13 @@ final class DiaryViewModel {
         let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
         let newCLIModel = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
         let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
+        let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
         if aiProvider != newProvider { aiProvider = newProvider }
         if cliModel != newCLIModel { cliModel = newCLIModel }
         if apiModel != newAPIModel { apiModel = newAPIModel }
+        if geminiModel != newGeminiModel { geminiModel = newGeminiModel }
         if diariesDirectoryPath != newPath {
             diariesDirectoryPath = newPath
             storage = nil
@@ -319,7 +322,8 @@ final class DiaryViewModel {
                 }
                 content = try await geminiAPI.generateDiary(
                     activity: activity,
-                    apiKey: apiKey
+                    apiKey: apiKey,
+                    model: geminiModel
                 )
             }
 
@@ -439,7 +443,8 @@ final class DiaryViewModel {
                     }
                     return try await geminiAPI.generateDiary(
                         activity: activity,
-                        apiKey: apiKey
+                        apiKey: apiKey,
+                        model: geminiModel
                     )
                 }
             } catch {

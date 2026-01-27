@@ -2,12 +2,16 @@ import Foundation
 
 /// Service for calling Gemini API
 actor GeminiAPIService {
-    private let baseURL = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")!
+    private let baseURLTemplate = "https://generativelanguage.googleapis.com/v1beta/models/%@:generateContent"
 
     /// Generate diary content from activity data
-    func generateDiary(activity: DailyActivity, apiKey: String) async throws -> DiaryContent {
+    func generateDiary(activity: DailyActivity, apiKey: String, model: String = "gemini-2.5-flash") async throws -> DiaryContent {
         let userPrompt = DiaryPromptBuilder.buildPromptWithInstruction(activity: activity)
 
+        let urlString = String(format: baseURLTemplate, model)
+        guard let baseURL = URL(string: urlString) else {
+            throw GeminiAPIError.invalidResponse
+        }
         var urlComponents = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         urlComponents.queryItems = [URLQueryItem(name: "key", value: apiKey)]
 
