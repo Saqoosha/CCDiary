@@ -123,7 +123,7 @@ final class DiaryViewModel {
     // Stored properties that sync with UserDefaults
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
     var cliModel: String = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
-    var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
+    var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-5-20251101"
     var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
@@ -166,7 +166,7 @@ final class DiaryViewModel {
     private func refreshSettings() {
         let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
         let newCLIModel = UserDefaults.standard.string(forKey: "claudeModel") ?? "sonnet"
-        let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-20250514"
+        let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-sonnet-4-5-20251101"
         let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 

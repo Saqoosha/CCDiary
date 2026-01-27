@@ -3,7 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeCLI.rawValue
     @AppStorage("claudeModel") private var cliModel = "sonnet"
-    @AppStorage("claudeAPIModel") private var apiModel = "claude-sonnet-4-20250514"
+    @AppStorage("claudeAPIModel") private var apiModel = "claude-sonnet-4-5-20251101"
     @AppStorage("geminiModel") private var geminiModel = "gemini-2.5-flash"
     @AppStorage("diariesDirectory") private var diariesDirectory = ""
 
@@ -17,21 +17,21 @@ struct SettingsView: View {
     }
 
     private let cliModels = [
-        ("sonnet", "Claude Sonnet"),
-        ("opus", "Claude Opus"),
-        ("haiku", "Claude Haiku")
+        ("sonnet", "Sonnet 4.5"),
+        ("opus", "Opus 4.5"),
+        ("haiku", "Haiku 4.5")
     ]
 
     private let apiModels = [
-        ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
-        ("claude-opus-4-20250514", "Claude Opus 4"),
-        ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku")
+        ("claude-sonnet-4-5-20251101", "Sonnet 4.5"),
+        ("claude-opus-4-5-20251101", "Opus 4.5"),
+        ("claude-haiku-4-5-20251101", "Haiku 4.5")
     ]
 
     private let geminiModels = [
-        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
-        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
-        ("gemini-2.0-flash", "Gemini 2.0 Flash")
+        ("gemini-2.5-flash", "2.5 Flash"),
+        ("gemini-2.5-pro", "2.5 Pro"),
+        ("gemini-3-flash", "3 Flash")
     ]
 
     var body: some View {

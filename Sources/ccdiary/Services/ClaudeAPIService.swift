@@ -5,7 +5,7 @@ actor ClaudeAPIService {
     private let baseURL = URL(string: "https://api.anthropic.com/v1/messages")!
 
     /// Generate diary content from activity data
-    func generateDiary(activity: DailyActivity, apiKey: String, model: String = "claude-sonnet-4-20250514") async throws -> DiaryContent {
+    func generateDiary(activity: DailyActivity, apiKey: String, model: String = "claude-sonnet-4-5-20251101") async throws -> DiaryContent {
         let userPrompt = DiaryPromptBuilder.buildPromptWithInstruction(activity: activity)
 
         var request = URLRequest(url: baseURL)
