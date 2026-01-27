@@ -55,7 +55,8 @@ struct DayStatistics: Sendable, Codable {
 
 /// Summary of a single project's activity for a day
 struct ProjectSummary: Identifiable, Sendable, Codable {
-    let id: UUID = UUID()
+    // Use path as stable ID for consistent SwiftUI identity across reloads
+    var id: String { path }
     let name: String
     let path: String
     let messageCount: Int
