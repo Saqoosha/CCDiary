@@ -135,17 +135,13 @@ final class DiaryViewModel {
     var showCursorPermissionAlert = false
 
     // Stored properties that sync with UserDefaults
-    var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
-    var cliModel: String = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
+    var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
     var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
     var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
     @ObservationIgnored
     private let aggregator = AggregatorService()
-
-    @ObservationIgnored
-    private let claudeCLI = ClaudeCLIService()
 
     @ObservationIgnored
     private let claudeAPI = ClaudeAPIService()
@@ -178,14 +174,12 @@ final class DiaryViewModel {
     }
 
     private func refreshSettings() {
-        let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeCLI
-        let newCLIModel = UserDefaults.standard.string(forKey: "claudeModel") ?? "haiku"
+        let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
         let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
         let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
         if aiProvider != newProvider { aiProvider = newProvider }
-        if cliModel != newCLIModel { cliModel = newCLIModel }
         if apiModel != newAPIModel { apiModel = newAPIModel }
         if geminiModel != newGeminiModel { geminiModel = newGeminiModel }
         if diariesDirectoryPath != newPath {
@@ -362,11 +356,6 @@ final class DiaryViewModel {
 
             let content: DiaryContent
             switch aiProvider {
-            case .claudeCLI:
-                content = try await claudeCLI.generateDiary(
-                    activity: activity,
-                    model: cliModel
-                )
             case .claudeAPI:
                 guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
                     throw ClaudeAPIError.missingAPIKey
@@ -483,11 +472,6 @@ final class DiaryViewModel {
                 }
 
                 switch aiProvider {
-                case .claudeCLI:
-                    return try await claudeCLI.generateDiary(
-                        activity: activity,
-                        model: cliModel
-                    )
                 case .claudeAPI:
                     guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
                         throw ClaudeAPIError.missingAPIKey
