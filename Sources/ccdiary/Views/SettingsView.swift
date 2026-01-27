@@ -46,7 +46,6 @@ struct SettingsView: View {
                     ForEach(AIProvider.allCases, id: \.rawValue) { provider in
                         ProviderButton(
                             title: provider.displayName,
-                            subtitle: providerSubtitle(provider),
                             isSelected: aiProvider == provider
                         ) {
                             aiProviderRaw = provider.rawValue
@@ -245,14 +244,6 @@ struct SettingsView: View {
 
     // MARK: - Helpers
 
-    private func providerSubtitle(_ provider: AIProvider) -> String {
-        switch provider {
-        case .claudeCLI: return "No API key"
-        case .claudeAPI: return "Fast"
-        case .gemini: return "Fastest"
-        }
-    }
-
     private func loadAPIKeys() {
         if let key = KeychainHelper.load(service: KeychainHelper.claudeAPIService) {
             claudeAPIKey = key
@@ -291,21 +282,16 @@ struct SettingsView: View {
 
 struct ProviderButton: View {
     let title: String
-    let subtitle: String
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                Text(subtitle)
-                    .font(.system(size: 10))
-                    .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
@@ -314,9 +300,11 @@ struct ProviderButton: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(isSelected ? Color.clear : Color(nsColor: .separatorColor), lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? .white : .primary)
+        .focusEffectDisabled()
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 }
 
