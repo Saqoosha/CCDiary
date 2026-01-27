@@ -286,17 +286,22 @@ final class DiaryViewModel {
     // MARK: - Diary Generation
 
     func generateDiary() async {
+        // Guard against concurrent generation
+        guard !isGenerating else { return }
+
+        // Capture state at start to avoid race conditions during async execution
         let targetDate = selectedDate
         let targetDateString = formatDateString(targetDate)
-        
+        let selectedPaths = selectedProjects
+
         isGenerating = true
         generationProgress = "Aggregating activity data..."
 
         do {
             let fullActivity = try await aggregator.aggregateForDate(targetDate)
 
-            // Filter to only selected projects
-            let filteredProjects = fullActivity.projects.filter { selectedProjects.contains($0.path) }
+            // Filter to only selected projects (using captured state)
+            let filteredProjects = fullActivity.projects.filter { selectedPaths.contains($0.path) }
             let activity = DailyActivity(
                 date: fullActivity.date,
                 projects: filteredProjects,

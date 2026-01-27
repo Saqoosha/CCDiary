@@ -205,9 +205,13 @@ struct RightPaneView: View {
         NSPasteboard.general.setString(diary.markdown, forType: .string)
 
         showCopied = true
-        Task {
+        // Use Task with weak capture to avoid memory issues if view is deallocated
+        Task { @MainActor [weak viewModel] in
             try? await Task.sleep(for: .seconds(2))
-            showCopied = false
+            // Only reset if the view model still exists (view wasn't deallocated)
+            if viewModel != nil {
+                self.showCopied = false
+            }
         }
     }
 }
@@ -249,27 +253,16 @@ struct ProjectBadge: View {
     var isSelected: Bool = true
     var onToggle: (() -> Void)? = nil
 
-    private var appIcon: NSImage {
-        switch project.source {
-        case .claudeCode:
-            return AppIconHelper.icon(for: "Claude")
-        case .cursor:
-            return AppIconHelper.icon(for: "Cursor")
-        case .all:
-            return NSWorkspace.shared.icon(for: .applicationBundle)
-        }
-    }
-
     var body: some View {
         HStack(spacing: 6) {
-            // Checkbox
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            // Checkbox (consistent square design)
+            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                 .font(.system(size: 12))
                 .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
 
             // App icon (only show when multiple sources exist)
             if showIcon {
-                Image(nsImage: appIcon)
+                Image(nsImage: AppIconHelper.icon(for: project.source))
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 14, height: 14)
@@ -278,20 +271,20 @@ struct ProjectBadge: View {
             // Project name
             Text(project.name)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? .primary : .secondary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
 
             // Time range
             Text(project.formattedTimeRange)
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(isSelected ? .secondary : .tertiary)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
 
             // Duration
             Text(project.formattedDuration)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(isSelected ? Color.primary.opacity(0.06) : Color.primary.opacity(0.02))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(
@@ -302,6 +295,11 @@ struct ProjectBadge: View {
         .onTapGesture {
             onToggle?()
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(project.name), \(project.formattedDuration)")
+        .accessibilityValue(isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Double tap to toggle selection")
     }
 }
 
@@ -432,6 +430,11 @@ struct ActivityReportView: View {
 
     // MARK: - Project Section
 
+    private var allProjectsSelected: Bool {
+        guard let stats = stats else { return false }
+        return viewModel.selectedProjects.count == stats.projects.count
+    }
+
     private func projectSection(stats: DayStatistics) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             // Section header
@@ -442,20 +445,24 @@ struct ActivityReportView: View {
 
                 Spacer()
 
+                // Selection count indicator
+                Text("\(viewModel.selectedProjects.count) of \(stats.projects.count)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if viewModel.selectedProjects.count == stats.projects.count {
-                            viewModel.selectedProjects.removeAll()
-                        } else {
-                            viewModel.selectedProjects = Set(stats.projects.map { $0.path })
-                        }
+                    if allProjectsSelected {
+                        viewModel.selectedProjects.removeAll()
+                    } else {
+                        viewModel.selectedProjects = Set(stats.projects.map { $0.path })
                     }
                 } label: {
-                    Text(viewModel.selectedProjects.count == stats.projects.count ? "None" : "All")
+                    Text(allProjectsSelected ? "Deselect All" : "Select All")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(allProjectsSelected ? "Deselect all projects" : "Select all projects")
             }
 
             // Project list
@@ -465,12 +472,10 @@ struct ActivityReportView: View {
                         project: project,
                         isSelected: viewModel.selectedProjects.contains(project.path),
                         onToggle: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                if viewModel.selectedProjects.contains(project.path) {
-                                    viewModel.selectedProjects.remove(project.path)
-                                } else {
-                                    viewModel.selectedProjects.insert(project.path)
-                                }
+                            if viewModel.selectedProjects.contains(project.path) {
+                                viewModel.selectedProjects.remove(project.path)
+                            } else {
+                                viewModel.selectedProjects.insert(project.path)
                             }
                         }
                     )
@@ -505,6 +510,9 @@ struct ActivityReportView: View {
         }
         .buttonStyle(.plain)
         .disabled(viewModel.selectedProjects.isEmpty)
+        .help(viewModel.selectedProjects.isEmpty ? "Select at least one project to generate a diary" : "Generate diary from selected projects")
+        .accessibilityLabel("Generate Diary")
+        .accessibilityHint(viewModel.selectedProjects.isEmpty ? "Select at least one project first" : "Double tap to generate diary from selected projects")
     }
 }
 
@@ -515,20 +523,9 @@ struct ReportProjectRow: View {
     let isSelected: Bool
     let onToggle: () -> Void
 
-    private var appIcon: NSImage {
-        switch project.source {
-        case .claudeCode:
-            return AppIconHelper.icon(for: "Claude")
-        case .cursor:
-            return AppIconHelper.icon(for: "Cursor")
-        case .all:
-            return NSWorkspace.shared.icon(for: .applicationBundle)
-        }
-    }
-
     var body: some View {
         HStack(spacing: 10) {
-            // Checkbox
+            // Checkbox (consistent square design with ProjectBadge)
             ZStack {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(isSelected ? Color.accentColor : Color.clear)
@@ -545,8 +542,8 @@ struct ReportProjectRow: View {
                 }
             }
 
-            // App icon
-            Image(nsImage: appIcon)
+            // App icon (using cached helper)
+            Image(nsImage: AppIconHelper.icon(for: project.source))
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 20, height: 20)
@@ -556,7 +553,7 @@ struct ReportProjectRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? .primary : .secondary)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
 
                 Text(project.formattedTimeRange)
@@ -587,88 +584,11 @@ struct ReportProjectRow: View {
         .onTapGesture {
             onToggle()
         }
-    }
-}
-
-// MARK: - Project Selection List
-
-struct ProjectSelectionList: View {
-    let projects: [ProjectSummary]
-    @Bindable var viewModel: DiaryViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(projects) { project in
-                ProjectSelectionRow(
-                    project: project,
-                    isSelected: viewModel.selectedProjects.contains(project.path),
-                    onToggle: {
-                        if viewModel.selectedProjects.contains(project.path) {
-                            viewModel.selectedProjects.remove(project.path)
-                        } else {
-                            viewModel.selectedProjects.insert(project.path)
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-
-struct ProjectSelectionRow: View {
-    let project: ProjectSummary
-    let isSelected: Bool
-    let onToggle: () -> Void
-
-    private var appIcon: NSImage {
-        switch project.source {
-        case .claudeCode:
-            return AppIconHelper.icon(for: "Claude")
-        case .cursor:
-            return AppIconHelper.icon(for: "Cursor")
-        case .all:
-            return NSWorkspace.shared.icon(for: .applicationBundle)
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            // Checkbox
-            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                .font(.system(size: 14))
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-
-            // App icon
-            Image(nsImage: appIcon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 16, height: 16)
-
-            // Project name
-            Text(project.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isSelected ? .primary : .secondary)
-
-            Spacer()
-
-            // Time range
-            Text(project.formattedTimeRange)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.tertiary)
-
-            // Duration
-            Text(project.formattedDuration)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onToggle()
-        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(project.name), \(project.formattedTimeRange), \(project.formattedDuration)")
+        .accessibilityValue(isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Double tap to toggle selection")
     }
 }
 
@@ -677,14 +597,40 @@ struct ProjectSelectionRow: View {
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    // Cache struct to store computed layout between sizeThatFits and placeSubviews
+    struct LayoutCache {
+        var size: CGSize = .zero
+        var positions: [CGPoint] = []
+        var proposalWidth: CGFloat = 0
+        var subviewCount: Int = 0
+    }
+
+    func makeCache(subviews: Subviews) -> LayoutCache {
+        LayoutCache()
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout LayoutCache) -> CGSize {
         let result = computeLayout(proposal: proposal, subviews: subviews)
+        cache.size = result.size
+        cache.positions = result.positions
+        cache.proposalWidth = proposal.width ?? 0
+        cache.subviewCount = subviews.count
         return result.size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let result = computeLayout(proposal: proposal, subviews: subviews)
-        for (index, position) in result.positions.enumerated() {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout LayoutCache) {
+        // Use cached positions if valid, otherwise recompute
+        let positions: [CGPoint]
+        if cache.positions.count == subviews.count &&
+           cache.proposalWidth == (proposal.width ?? 0) &&
+           cache.subviewCount == subviews.count {
+            positions = cache.positions
+        } else {
+            let result = computeLayout(proposal: proposal, subviews: subviews)
+            positions = result.positions
+        }
+
+        for (index, position) in positions.enumerated() {
             subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
         }
     }
@@ -749,8 +695,25 @@ struct StatBadge: View {
 // MARK: - App Icon Helper
 
 enum AppIconHelper {
-    /// Get app icon from /Applications or fallback to asset catalog
+    // Thread-safe static cache using nonisolated(unsafe) + NSLock
+    nonisolated(unsafe) private static var iconCache: [String: NSImage] = [:]
+    private static let cacheLock = NSLock()
+
+    /// Get app icon from /Applications or fallback to asset catalog (cached)
     static func icon(for appName: String) -> NSImage {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+
+        if let cached = iconCache[appName] {
+            return cached
+        }
+
+        let icon = loadIcon(for: appName)
+        iconCache[appName] = icon
+        return icon
+    }
+
+    private static func loadIcon(for appName: String) -> NSImage {
         let paths = [
             "/Applications/\(appName).app",
             "/System/Applications/\(appName).app",
@@ -770,5 +733,17 @@ enum AppIconHelper {
 
         // Last resort: generic app icon
         return NSWorkspace.shared.icon(for: .applicationBundle)
+    }
+
+    /// Get cached icon for activity source
+    static func icon(for source: ActivitySource) -> NSImage {
+        switch source {
+        case .claudeCode:
+            return icon(for: "Claude")
+        case .cursor:
+            return icon(for: "Cursor")
+        case .all:
+            return NSWorkspace.shared.icon(for: .applicationBundle)
+        }
     }
 }
