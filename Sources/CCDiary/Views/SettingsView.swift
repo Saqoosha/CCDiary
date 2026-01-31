@@ -185,7 +185,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
-                TextField("Default: ./diaries", text: $diariesDirectory)
+                TextField("Default: ~/Documents/CCDiary/", text: $diariesDirectory)
                     .textFieldStyle(.roundedBorder)
 
                 Button("Browse") {

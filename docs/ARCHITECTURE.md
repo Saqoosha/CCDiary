@@ -2,7 +2,7 @@
 
 ## Overview
 
-CCDiary is a macOS app that analyzes Claude Code conversation history and generates daily work diaries in Japanese using the Claude Sonnet API.
+CCDiary is a macOS app that analyzes Claude Code and Cursor conversation history and generates daily work diaries using AI (Claude API or Gemini API).
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
@@ -76,7 +76,7 @@ Main view model managing all UI state.
 @Observable @MainActor
 final class DiaryViewModel {
     // Calendar state
-    var datesWithActivity: Set<String>  // Dates with Claude Code activity
+    var datesWithActivity: Set<String>  // Dates with Claude Code or Cursor activity
     var datesWithDiary: Set<String>     // Dates with generated diary
     var selectedDate: Date
 
@@ -172,14 +172,25 @@ Reads detailed conversation logs.
 | `filterMeaningfulMessages(entries)` | Remove meta/snapshot entries |
 | `extractTextContent(entry)` | Extract text from content blocks |
 
+### CursorService
+
+Reads Cursor chat history from SQLite database.
+
+| Method | Description |
+|--------|-------------|
+| `getActivityForDate(date)` | Get all Cursor activity for a date |
+| `getAllDatesWithMessages()` | Get all dates with Cursor messages |
+| `buildDateIndexIfNeeded()` | Build date index for fast lookups |
+
 ### AggregatorService
 
-Orchestrates data collection.
+Orchestrates data collection from Claude Code and Cursor.
 
 | Method | Description |
 |--------|-------------|
 | `aggregateForDate(date)` | Full aggregation with conversation content |
 | `getQuickStatistics(date)` | Fast stats without reading conversation content |
+| `getAllActivityDates()` | Get all dates with activity from both sources |
 
 ### AI Services
 
@@ -247,10 +258,12 @@ Fast statistics without conversation content.
 ```swift
 struct DayStatistics: Sendable {
     let date: Date
-    let projectCount: Int
-    let sessionCount: Int
-    let messageCount: Int
-    let characterCount: Int
+    let ccProjectCount: Int
+    let ccSessionCount: Int
+    let ccMessageCount: Int
+    let cursorProjectCount: Int
+    let cursorSessionCount: Int
+    let cursorMessageCount: Int
     let projects: [ProjectSummary]
 }
 
@@ -315,8 +328,10 @@ CCDiary/
 └── Sources/CCDiary/
     ├── CCDiaryApp.swift           # App entry point
     ├── Models/
+    │   ├── ActivitySource.swift
     │   ├── AIProvider.swift
     │   ├── ConversationEntry.swift
+    │   ├── CursorHistoryEntry.swift
     │   ├── DayStatistics.swift
     │   ├── DiaryContent.swift
     │   ├── DiaryEntry.swift
@@ -326,6 +341,7 @@ CCDiary/
     │   ├── AggregatorService.swift
     │   ├── ClaudeAPIService.swift
     │   ├── ConversationService.swift
+    │   ├── CursorService.swift
     │   ├── DateFormatting.swift
     │   ├── DiaryFormatter.swift
     │   ├── DiaryGenerator.swift
@@ -339,13 +355,16 @@ CCDiary/
     └── Views/
         ├── CalendarGridView.swift
         ├── ContentView.swift
+        ├── MarkdownWebView.swift
         ├── RightPaneView.swift
         └── SettingsView.swift
 ```
 
 ## Data Sources
 
-### ~/.claude/history.jsonl
+### Claude Code
+
+#### ~/.claude/history.jsonl
 
 Global log of all user inputs across all projects.
 
@@ -358,7 +377,7 @@ Global log of all user inputs across all projects.
 }
 ```
 
-### ~/.claude/projects/{encoded-path}/*.jsonl
+#### ~/.claude/projects/{encoded-path}/*.jsonl
 
 Detailed conversation files per project.
 
@@ -374,6 +393,19 @@ Path encoding: `/path/to/myproject` → `-path-to-myproject`
   "timestamp": "2026-01-20T10:30:00.000Z"
 }
 ```
+
+### Cursor
+
+#### ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
+
+SQLite database containing chat history.
+
+- `cursorDiskKV` table: Chat messages (key: `bubbleId:{composerId}:{messageId}`)
+- `ItemTable` table: Composer session data and daily stats
+
+#### ~/Library/Application Support/Cursor/User/workspaceStorage/{hash}/state.vscdb
+
+Per-workspace SQLite database containing composer session metadata.
 
 ## Token Optimization
 

@@ -39,7 +39,7 @@ English | [日本語](README.ja.md)
 
 ### Diaries Directory
 
-By default, diaries are saved to `~/Desktop/CCDiary/diaries`. You can change this in Settings.
+By default, diaries are saved to `~/Documents/CCDiary/`. You can change this in Settings.
 
 ## Usage
 
@@ -52,7 +52,7 @@ By default, diaries are saved to `~/Desktop/CCDiary/diaries`. You can change thi
 
 ### Day View
 
-- Statistics for selected day (projects, sessions, messages, characters)
+- Statistics for selected day (projects, sessions, messages)
 - Activity breakdown by project
 - Displays generated diary
 - Copy button to clipboard
@@ -80,7 +80,7 @@ By default, diaries are saved to `~/Desktop/CCDiary/diaries`. You can change thi
 Diaries are saved in Markdown format:
 
 ```
-diaries/
+~/Documents/CCDiary/
 ├── 2026-01-20.md
 ├── 2026-01-21.md
 └── 2026-01-22.md
