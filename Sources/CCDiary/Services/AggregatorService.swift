@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "ccdiary", category: "AggregatorService")
+private let logger = Logger(subsystem: "CCDiary", category: "AggregatorService")
 
 /// Options for aggregation
 struct AggregateOptions: Sendable {

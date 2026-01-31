@@ -3,15 +3,51 @@ import Foundation
 /// Service for storing and loading diary entries
 actor DiaryStorage {
     private let diariesDirectory: URL
+    private static let legacyDirectoryName = "ccdiary"
+    private static let newDirectoryName = "CCDiary"
 
     init() {
-        // Default to ~/Documents/ccdiary/ (macOS standard for user documents)
+        // Default to ~/Documents/CCDiary/ (macOS standard for user documents)
         let home = FileManager.default.homeDirectoryForCurrentUser
-        self.diariesDirectory = home.appendingPathComponent("Documents/ccdiary")
+        self.diariesDirectory = home.appendingPathComponent("Documents/\(Self.newDirectoryName)")
+
+        // Migrate from legacy directory if needed
+        Self.migrateFromLegacyDirectory()
     }
 
     init(directory: URL) {
         self.diariesDirectory = directory
+    }
+
+    /// Migrate diaries from legacy ~/Documents/ccdiary to ~/Documents/CCDiary
+    private static func migrateFromLegacyDirectory() {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let legacyDir = home.appendingPathComponent("Documents/\(legacyDirectoryName)")
+        let newDir = home.appendingPathComponent("Documents/\(newDirectoryName)")
+
+        // Skip if legacy directory doesn't exist
+        guard fileManager.fileExists(atPath: legacyDir.path) else { return }
+
+        // Create new directory if needed
+        try? fileManager.createDirectory(at: newDir, withIntermediateDirectories: true)
+
+        // Move all files from legacy to new directory
+        if let files = try? fileManager.contentsOfDirectory(at: legacyDir, includingPropertiesForKeys: nil) {
+            for file in files {
+                let destURL = newDir.appendingPathComponent(file.lastPathComponent)
+                // Only move if destination doesn't exist (don't overwrite newer files)
+                if !fileManager.fileExists(atPath: destURL.path) {
+                    try? fileManager.moveItem(at: file, to: destURL)
+                }
+            }
+        }
+
+        // Remove legacy directory if empty
+        if let remaining = try? fileManager.contentsOfDirectory(at: legacyDir, includingPropertiesForKeys: nil),
+           remaining.isEmpty {
+            try? fileManager.removeItem(at: legacyDir)
+        }
     }
 
     /// Ensure diaries directory exists

@@ -1,8 +1,8 @@
-# ccdiary
+# CCDiary
 
 A macOS app that automatically generates work diaries in Japanese from Claude Code conversation history.
 
-![ccdiary screenshot](images/screenshot-v2.png)
+![CCDiary screenshot](images/screenshot-v2.png)
 
 ## Features
 
@@ -42,10 +42,10 @@ swift build -c release
 xcodegen generate
 
 # Build with xcodebuild
-xcodebuild -scheme ccdiary -configuration Debug -derivedDataPath build build
+xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build
 
 # Run
-open build/Build/Products/Debug/ccdiary.app
+open build/Build/Products/Debug/CCDiary.app
 ```
 
 Or open directly in Xcode:
@@ -83,7 +83,7 @@ open Package.swift
   - Claude API (requires Anthropic API key)
   - Gemini API (requires Google AI API key)
 - **Model**: Model to use (for Claude CLI: sonnet/opus/haiku)
-- **Diaries Directory**: Where to save diaries (default: `~/Desktop/ccdiary/diaries`)
+- **Diaries Directory**: Where to save diaries (default: `~/Desktop/CCDiary/diaries`)
 
 ## Output
 

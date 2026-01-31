@@ -1,6 +1,6 @@
 # Performance Optimization Journey
 
-This document describes the performance optimizations applied to ccdiary's statistics calculation.
+This document describes the performance optimizations applied to CCDiary's statistics calculation.
 
 ## Problem Statement
 

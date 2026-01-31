@@ -1,4 +1,4 @@
-# Development Guide for ccdiary
+# Development Guide for CCDiary
 
 ## Project Structure
 
@@ -15,22 +15,22 @@
 xcodegen generate
 
 # Build
-xcodebuild -scheme ccdiary -configuration Debug -derivedDataPath build build
+xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build
 
 # Run
-open build/Build/Products/Debug/ccdiary.app
+open build/Build/Products/Debug/CCDiary.app
 ```
 
 ### 2. Kill running app before rebuild
 
 ```bash
-pkill -f ccdiary
+pkill -f CCDiary
 ```
 
 ### 3. Quick iteration
 
 ```bash
-pkill -f ccdiary; xcodebuild -scheme ccdiary -configuration Debug -derivedDataPath build build 2>&1 | tail -5 && open build/Build/Products/Debug/ccdiary.app
+pkill -f CCDiary; xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build 2>&1 | tail -5 && open build/Build/Products/Debug/CCDiary.app
 ```
 
 ## Key Points
@@ -38,7 +38,7 @@ pkill -f ccdiary; xcodebuild -scheme ccdiary -configuration Debug -derivedDataPa
 - **Always use `xcodebuild`** for building, not `swift build` (app requires proper signing and bundling)
 - **Run `xcodegen generate`** after adding new source files
 - Build output goes to `build/Build/Products/Debug/`
-- Statistics cache stored in `~/Library/Caches/ccdiary/statistics/`
+- Statistics cache stored in `~/Library/Caches/CCDiary/statistics/`
 
 ## Debugging
 
@@ -48,14 +48,14 @@ Use `logger.notice` (not `logger.info`) for logs that need to be persisted and v
 
 ```swift
 import os.log
-private let logger = Logger(subsystem: "ccdiary", category: "MyService")
+private let logger = Logger(subsystem: "CCDiary", category: "MyService")
 logger.notice("Message here")
 ```
 
 View logs with:
 
 ```bash
-/usr/bin/log show --predicate 'subsystem == "ccdiary"' --last 30s
+/usr/bin/log show --predicate 'subsystem == "CCDiary"' --last 30s
 ```
 
 ### Testing with clean state
@@ -64,17 +64,17 @@ View logs with:
 
 ```bash
 # Find the PID
-ps aux | grep ccdiary.app | grep -v grep
+ps aux | grep CCDiary.app | grep -v grep
 
 # Kill by PID
 kill <PID>
 
 # Clear all caches
-rm -rf ~/Library/Caches/ccdiary/
+rm -rf ~/Library/Caches/CCDiary/
 
 # Rebuild and run
-xcodebuild -scheme ccdiary -configuration Debug -derivedDataPath build build 2>&1 | tail -3
-open build/Build/Products/Debug/ccdiary.app
+xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build 2>&1 | tail -3
+open build/Build/Products/Debug/CCDiary.app
 ```
 
 ### Testing specific dates on launch
@@ -93,9 +93,9 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
 
 ## Architecture
 
-- `Sources/ccdiary/Models/` - Data models
-- `Sources/ccdiary/Views/` - SwiftUI views
-- `Sources/ccdiary/Services/` - Business logic and data access
+- `Sources/CCDiary/Models/` - Data models
+- `Sources/CCDiary/Views/` - SwiftUI views
+- `Sources/CCDiary/Services/` - Business logic and data access
   - `HistoryService` - Reads Claude Code history
   - `ConversationService` - Reads conversation JSONL files (with binary search optimization)
   - `AggregatorService` - Aggregates daily activity data
@@ -135,8 +135,8 @@ Multiple optimizations reduce diary generation time from ~14s to ~2s:
 
 ### Caches
 
-- **Date Index** (`~/Library/Caches/ccdiary/date_index_v2.json`): Maps dates to files containing that date
-- **Statistics Cache** (`~/Library/Caches/ccdiary/statistics/`): Cached stats for past dates
+- **Date Index** (`~/Library/Caches/CCDiary/date_index_v2.json`): Maps dates to files containing that date
+- **Statistics Cache** (`~/Library/Caches/CCDiary/statistics/`): Cached stats for past dates
 
 ## Benchmark Tool
 

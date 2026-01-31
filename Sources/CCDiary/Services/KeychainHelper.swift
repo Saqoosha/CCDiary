@@ -3,8 +3,38 @@ import Security
 
 /// Helper for storing and retrieving API keys from Keychain
 enum KeychainHelper {
-    static let claudeAPIService = "com.ccdiary.claude-api-key"
-    static let geminiAPIService = "com.ccdiary.gemini-api-key"
+    static let claudeAPIService = "sh.saqoo.CCDiary.claude-api-key"
+    static let geminiAPIService = "sh.saqoo.CCDiary.gemini-api-key"
+
+    // Legacy identifiers for migration
+    private static let legacyClaudeAPIService = "com.ccdiary.claude-api-key"
+    private static let legacyGeminiAPIService = "com.ccdiary.gemini-api-key"
+
+    private static let migrationLock = NSLock()
+    private nonisolated(unsafe) static var hasMigrated = false
+
+    /// Migrate keys from legacy identifiers (call once at app startup)
+    static func migrateIfNeeded() {
+        migrationLock.lock()
+        defer { migrationLock.unlock() }
+
+        guard !hasMigrated else { return }
+        hasMigrated = true
+
+        // Migrate Claude API key
+        if load(service: claudeAPIService) == nil,
+           let legacyKey = load(service: legacyClaudeAPIService) {
+            try? save(key: legacyKey, service: claudeAPIService)
+            delete(service: legacyClaudeAPIService)
+        }
+
+        // Migrate Gemini API key
+        if load(service: geminiAPIService) == nil,
+           let legacyKey = load(service: legacyGeminiAPIService) {
+            try? save(key: legacyKey, service: geminiAPIService)
+            delete(service: legacyGeminiAPIService)
+        }
+    }
 
     /// Save a key to the Keychain
     static func save(key: String, service: String) throws {

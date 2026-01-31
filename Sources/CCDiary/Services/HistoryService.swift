@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "ccdiary", category: "HistoryService")
+private let logger = Logger(subsystem: "CCDiary", category: "HistoryService")
 
 /// Service for reading Claude Code history
 actor HistoryService {

@@ -42,6 +42,13 @@ struct DiaryCommands: Commands {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Migrate keychain entries from legacy identifiers (background to avoid blocking on password prompt)
+        DispatchQueue.global(qos: .utility).async {
+            KeychainHelper.migrateIfNeeded()
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }

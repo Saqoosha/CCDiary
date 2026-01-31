@@ -1,13 +1,13 @@
-# ccdiary - Architecture
+# CCDiary - Architecture
 
 ## Overview
 
-ccdiary is a macOS app that analyzes Claude Code conversation history and generates daily work diaries in Japanese using the Claude Sonnet API.
+CCDiary is a macOS app that analyzes Claude Code conversation history and generates daily work diaries in Japanese using the Claude Sonnet API.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
 │                        macOS App (SwiftUI)                         │
-│                        ccdiaryApp.swift                            │
+│                        CCDiaryApp.swift                            │
 └────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -306,14 +306,14 @@ struct DiaryEntry: Codable, Sendable {
 ## File Structure
 
 ```text
-ccdiary/
+CCDiary/
 ├── Package.swift
 ├── project.yml              # XcodeGen config
 ├── scripts/                 # Build scripts
 ├── docs/
 │   └── ARCHITECTURE.md
-└── Sources/ccdiary/
-    ├── ccdiaryApp.swift           # App entry point
+└── Sources/CCDiary/
+    ├── CCDiaryApp.swift           # App entry point
     ├── Models/
     │   ├── AIProvider.swift
     │   ├── ConversationEntry.swift

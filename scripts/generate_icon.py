@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate app icon for ccdiary by applying squircle mask to source image.
+"""Generate app icon for CCDiary by applying squircle mask to source image.
 
 Usage:
   python generate_icon.py              # Generate all icon sizes
@@ -237,7 +237,7 @@ def save_png(image: NSImage, path: Path, size: int, source_size: int = 1024):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate app icon for ccdiary")
+    parser = argparse.ArgumentParser(description="Generate app icon for CCDiary")
     parser.add_argument(
         "--foreground",
         action="store_true",
@@ -256,7 +256,7 @@ def main():
     source_image = load_source_image(source_path)
 
     if args.foreground:
-        output_dir = project_root / "Sources" / "ccdiary" / "AppIcon.icon" / "Assets"
+        output_dir = project_root / "Sources" / "CCDiary" / "AppIcon.icon" / "Assets"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         print("Creating foreground layer for Icon Composer...")
@@ -268,7 +268,7 @@ def main():
         
         print(f"\nForeground layer saved to: {output_path}")
     else:
-        output_dir = project_root / "Sources" / "ccdiary" / "Assets.xcassets" / "AppIcon.appiconset"
+        output_dir = project_root / "Sources" / "CCDiary" / "Assets.xcassets" / "AppIcon.appiconset"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         print("Creating icon with squircle mask...")

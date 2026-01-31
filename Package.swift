@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "ccdiary",
+    name: "CCDiary",
     platforms: [
         .macOS(.v14)
     ],
     targets: [
         .executableTarget(
-            name: "ccdiary",
-            path: "Sources/ccdiary",
+            name: "CCDiary",
+            path: "Sources/CCDiary",
             resources: [
                 .copy("Resources")
             ]

@@ -5,9 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
 DERIVED_DATA_DIR="${BUILD_DIR}/DerivedData"
 
-APP_NAME="ccdiary"
-VOL_NAME="ccdiary"
-DMG_NAME="ccdiary"
+APP_NAME="CCDiary"
+VOL_NAME="CCDiary"
+DMG_NAME="CCDiary"
 
 DMG_ROOT="${BUILD_DIR}/dmg-root"
 OUT_DMG="${BUILD_DIR}/${DMG_NAME}.dmg"

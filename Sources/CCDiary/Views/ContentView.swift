@@ -30,7 +30,7 @@ struct ContentView: View {
             // Right: Unified stats + diary pane
             RightPaneView(viewModel: viewModel)
         }
-        .navigationTitle("ccdiary")
+        .navigationTitle("CCDiary")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 SettingsLink {
@@ -65,7 +65,7 @@ struct ContentView: View {
             }
             Button("Ignore", role: .cancel) { }
         } message: {
-            Text("ccdiary needs Full Disk Access to read Cursor activity data.\n\nPlease add ccdiary to Full Disk Access in System Settings, then restart the app.")
+            Text("CCDiary needs Full Disk Access to read Cursor activity data.\n\nPlease add CCDiary to Full Disk Access in System Settings, then restart the app.")
         }
         .overlay {
             if viewModel.isBuildingIndex || viewModel.isGenerating {

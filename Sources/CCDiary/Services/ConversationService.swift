@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "ccdiary", category: "ConversationService")
+private let logger = Logger(subsystem: "CCDiary", category: "ConversationService")
 
 
 
@@ -20,7 +20,7 @@ private actor DateIndex {
 
     private static var cacheFileURL: URL {
         let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("ccdiary")
+            .appendingPathComponent("CCDiary")
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         return cacheDir.appendingPathComponent("date_index_v2.json")
     }

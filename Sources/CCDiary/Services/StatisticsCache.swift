@@ -1,7 +1,7 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "ccdiary", category: "StatisticsCache")
+private let logger = Logger(subsystem: "CCDiary", category: "StatisticsCache")
 
 /// Service for caching DayStatistics to speed up loading
 actor StatisticsCache {
@@ -12,7 +12,7 @@ actor StatisticsCache {
 
     init() {
         let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
-        cacheDirectory = cachesDir.appendingPathComponent("ccdiary/statistics", isDirectory: true)
+        cacheDirectory = cachesDir.appendingPathComponent("CCDiary/statistics", isDirectory: true)
 
         // Create directory if needed
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)

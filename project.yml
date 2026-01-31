@@ -1,4 +1,4 @@
-name: ccdiary
+name: CCDiary
 options:
   bundleIdPrefix: sh.saqoo
   deploymentTarget:
@@ -8,23 +8,23 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "1.3.1"
-    CURRENT_PROJECT_VERSION: "9"
+    MARKETING_VERSION: "1.4.0"
+    CURRENT_PROJECT_VERSION: "10"
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 targets:
-  ccdiary:
+  CCDiary:
     type: application
     platform: macOS
     sources:
-      - path: Sources/ccdiary
+      - path: Sources/CCDiary
         excludes:
           - "**/.DS_Store"
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: sh.saqoo.ccdiary
-      PRODUCT_NAME: ccdiary
-      INFOPLIST_FILE: Sources/ccdiary/Info.plist
+      PRODUCT_BUNDLE_IDENTIFIER: sh.saqoo.CCDiary
+      PRODUCT_NAME: CCDiary
+      INFOPLIST_FILE: Sources/CCDiary/Info.plist
       GENERATE_INFOPLIST_FILE: false
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: G5G54TCH8W
@@ -32,15 +32,15 @@ targets:
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
     info:
-      path: Sources/ccdiary/Info.plist
+      path: Sources/CCDiary/Info.plist
       properties:
-        CFBundleName: ccdiary
-        CFBundleDisplayName: ccdiary
-        CFBundleIdentifier: sh.saqoo.ccdiary
+        CFBundleName: CCDiary
+        CFBundleDisplayName: CCDiary
+        CFBundleIdentifier: sh.saqoo.CCDiary
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundlePackageType: APPL
-        CFBundleExecutable: ccdiary
+        CFBundleExecutable: CCDiary
         LSMinimumSystemVersion: "14.0"
         NSHighResolutionCapable: true
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -51,8 +51,8 @@ targets:
     platform: macOS
     sources:
       - path: Tools/Benchmark
-      - path: Sources/ccdiary/Services
-      - path: Sources/ccdiary/Models
+      - path: Sources/CCDiary/Services
+      - path: Sources/CCDiary/Models
     settings:
       PRODUCT_NAME: benchmark
       PRODUCT_MODULE_NAME: BenchmarkTool

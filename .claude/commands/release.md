@@ -1,6 +1,6 @@
-# Release ccdiary
+# Release CCDiary
 
-Release a new version of ccdiary with automatic version bump and release notes.
+Release a new version of CCDiary with automatic version bump and release notes.
 
 ## Task
 
@@ -45,7 +45,7 @@ This builds, notarizes, creates DMG, commits, tags, and creates GitHub Release.
 Analyze the actual code changes and write user-friendly release notes:
 
 ```markdown
-## ccdiary X.Y.Z
+## CCDiary X.Y.Z
 
 Brief description of this release.
 
@@ -69,7 +69,7 @@ gh release edit v<new_version> --notes "<generated notes>"
 
 Display:
 - New version number
-- Release URL: `https://github.com/Saqoosha/ccdiary/releases/tag/v<new_version>`
+- Release URL: `https://github.com/Saqoosha/CCDiary/releases/tag/v<new_version>`
 
 ## Notes
 

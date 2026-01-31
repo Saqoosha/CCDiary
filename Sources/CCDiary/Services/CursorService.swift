@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 import os.log
 
-private let logger = Logger(subsystem: "ccdiary", category: "CursorService")
+private let logger = Logger(subsystem: "CCDiary", category: "CursorService")
 
 // SQLITE_TRANSIENT tells SQLite to copy the string immediately
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -14,9 +14,17 @@ private actor CursorDateCache {
     private var lastDBModTime: TimeInterval = 0
 
     private static var cacheFileURL: URL {
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("ccdiary")
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let fileManager = FileManager.default
+        let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+
+        // Remove legacy cache directory
+        let legacyDir = cachesDir.appendingPathComponent("ccdiary")
+        if fileManager.fileExists(atPath: legacyDir.path) {
+            try? fileManager.removeItem(at: legacyDir)
+        }
+
+        let cacheDir = cachesDir.appendingPathComponent("CCDiary")
+        try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         return cacheDir.appendingPathComponent("cursor_dates.json")
     }
 

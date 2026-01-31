@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ccdiary</string>
+	<string>CCDiary</string>
 	<key>CFBundleExecutable</key>
-	<string>ccdiary</string>
+	<string>CCDiary</string>
 	<key>CFBundleIdentifier</key>
-	<string>sh.saqoo.ccdiary</string>
+	<string>sh.saqoo.CCDiary</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>ccdiary</string>
+	<string>CCDiary</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
