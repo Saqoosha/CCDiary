@@ -21,18 +21,20 @@ enum KeychainHelper {
         guard !hasMigrated else { return }
         hasMigrated = true
 
-        // Migrate Claude API key
+        // Migrate Claude API key (only delete legacy if save succeeds)
         if load(service: claudeAPIService) == nil,
            let legacyKey = load(service: legacyClaudeAPIService) {
-            try? save(key: legacyKey, service: claudeAPIService)
-            delete(service: legacyClaudeAPIService)
+            if (try? save(key: legacyKey, service: claudeAPIService)) != nil {
+                delete(service: legacyClaudeAPIService)
+            }
         }
 
-        // Migrate Gemini API key
+        // Migrate Gemini API key (only delete legacy if save succeeds)
         if load(service: geminiAPIService) == nil,
            let legacyKey = load(service: legacyGeminiAPIService) {
-            try? save(key: legacyKey, service: geminiAPIService)
-            delete(service: legacyGeminiAPIService)
+            if (try? save(key: legacyKey, service: geminiAPIService)) != nil {
+                delete(service: legacyGeminiAPIService)
+            }
         }
     }
 
