@@ -15,7 +15,7 @@
 - **自動履歴収集** - Claude CodeとCursorのチャット履歴を自動で収集
 - **カレンダー中心のUI** - 最初のアクティビティから今月末までを動的に表示
 - **プロジェクト別整理** - アクティビティをプロジェクトごとに整理
-- **複数プロバイダー対応** - Claude CLI / Claude API / Gemini APIから選択可能
+- **複数プロバイダー対応** - Claude API / Gemini APIから選択可能
 - **大規模ファイル対応** - 87MB超のログファイルもバイナリサーチで高速処理
 - **Markdown出力** - 日記をMarkdown形式で保存・表示
 
@@ -32,10 +32,9 @@
 1. CCDiary.appを開く
 2. 設定（歯車アイコン）を開く
 3. AIプロバイダーを選択:
-   - **Claude CLI** - Claude Codeがインストール済みなら追加設定不要
    - **Claude API** - Anthropic APIキーが必要
    - **Gemini API** - Google AI APIキーが必要
-4. APIキーを入力（必要な場合）
+4. APIキーを入力
 5. 「保存」をクリック
 
 ### 日記の保存先

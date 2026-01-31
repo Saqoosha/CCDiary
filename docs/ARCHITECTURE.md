@@ -30,7 +30,7 @@ CCDiary is a macOS app that analyzes Claude Code conversation history and genera
                                       ▼
                             ┌────────────────┐
                             │   AI Services  │
-                            │ Claude CLI/API │
+                            │   Claude API   │
                             │   Gemini API   │
                             └────────────────┘
 ```
@@ -192,7 +192,7 @@ Multiple AI providers are supported for diary generation:
 
 **Provider Selection:**
 
-Users can choose their preferred provider in Settings. Claude CLI is recommended as it requires no additional API key setup.
+Users can choose their preferred provider in Settings.
 
 **Common Prompt:**
 
