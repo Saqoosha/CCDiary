@@ -5,14 +5,14 @@ English | [日本語](README.ja.md)
 <p align="center">
   <img src="images/appicon.png" width="128" height="128" alt="CCDiary icon">
   <br>
-  A macOS app that automatically generates work diaries from Claude Code conversation history.
+  A macOS app that automatically generates work diaries from Claude Code and Cursor chat history.
 </p>
 
 ![CCDiary screenshot](images/screenshot-v2.png)
 
 ## Features
 
-- **Automatic History Collection** - Collects Claude Code conversation history automatically
+- **Automatic History Collection** - Collects Claude Code and Cursor chat history automatically
 - **Calendar-Centric UI** - Dynamically shows from earliest activity to end of current month
 - **Project Organization** - Organizes activities by project
 - **Multi-Provider Support** - Choose between Claude CLI, Claude API, or Gemini API
@@ -67,10 +67,14 @@ By default, diaries are saved to `~/Desktop/CCDiary/diaries`. You can change thi
 
 ## Data Sources
 
-Reads the following files recorded by Claude Code:
+### Claude Code
 
 - `~/.claude/history.jsonl` - Input history across all projects
 - `~/.claude/projects/{encoded-path}/*.jsonl` - Detailed conversation logs per project
+
+### Cursor
+
+- `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` - Chat history database
 
 ## Output
 
