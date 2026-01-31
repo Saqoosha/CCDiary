@@ -1,60 +1,48 @@
+English | [日本語](README.ja.md)
+
 # CCDiary
 
-A macOS app that automatically generates work diaries in Japanese from Claude Code conversation history.
+<p align="center">
+  <img src="images/appicon.png" width="128" height="128" alt="CCDiary icon">
+  <br>
+  A macOS app that automatically generates work diaries from Claude Code conversation history.
+</p>
 
 ![CCDiary screenshot](images/screenshot-v2.png)
 
 ## Features
 
-- Automatically collects Claude Code conversation history
-- Calendar-centric UI (dynamically shows from earliest activity to end of current month)
-- Organizes activities by project
-- Multiple AI provider support (Claude CLI / Claude API / Gemini API)
-- Handles large files efficiently (87MB+ log files with binary search optimization)
-- Saves and displays diaries in Markdown format
+- **Automatic History Collection** - Collects Claude Code conversation history automatically
+- **Calendar-Centric UI** - Dynamically shows from earliest activity to end of current month
+- **Project Organization** - Organizes activities by project
+- **Multi-Provider Support** - Choose between Claude CLI, Claude API, or Gemini API
+- **Large File Handling** - Efficiently processes 87MB+ log files with binary search optimization
+- **Markdown Output** - Saves and displays diaries in Markdown format
 
-## Data Sources
+## Installation
 
-Reads the following files recorded by Claude Code:
+1. Download the latest `.dmg` from [Releases](https://github.com/Saqoosha/CCDiary/releases)
+2. Open the DMG and drag `CCDiary.app` to Applications
+3. Launch the app
 
-- `~/.claude/history.jsonl` - Input history across all projects
-- `~/.claude/projects/{encoded-path}/*.jsonl` - Detailed conversation logs per project
+## Configuration
 
-## Requirements
+### AI Provider
 
-- macOS 14.0+
-- Xcode 15+ (for building)
-- One of the following:
-  - Claude Code CLI (no additional setup required if already installed)
-  - Anthropic API Key
-  - Google Gemini API Key
+1. Open CCDiary.app
+2. Go to Settings (gear icon)
+3. Select your preferred AI provider:
+   - **Claude CLI** - No additional setup required if Claude Code is already installed
+   - **Claude API** - Requires Anthropic API key
+   - **Gemini API** - Requires Google AI API key
+4. Enter your API key (if required)
+5. Click "Save"
 
-## Build
+### Diaries Directory
 
-```bash
-# Debug build
-swift build
+By default, diaries are saved to `~/Desktop/CCDiary/diaries`. You can change this in Settings.
 
-# Release build
-swift build -c release
-
-# Generate Xcode project from project.yml
-xcodegen generate
-
-# Build with xcodebuild
-xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build
-
-# Run
-open build/Build/Products/Debug/CCDiary.app
-```
-
-Or open directly in Xcode:
-
-```bash
-open Package.swift
-```
-
-## App Features
+## Usage
 
 ### Calendar View
 
@@ -72,18 +60,17 @@ open Package.swift
 
 ### Diary Generation
 
-- Generate diary with the Generate button
-- Uses Claude Sonnet API
-- Shows progress indicator
+1. Select a day with activity
+2. Click the "Generate" button
+3. Wait for the AI to generate your diary
+4. The diary is automatically saved
 
-### Settings
+## Data Sources
 
-- **AI Provider**: Choose your preferred AI provider
-  - Claude CLI (no API key required if Claude Code is installed)
-  - Claude API (requires Anthropic API key)
-  - Gemini API (requires Google AI API key)
-- **Model**: Model to use (for Claude CLI: sonnet/opus/haiku)
-- **Diaries Directory**: Where to save diaries (default: `~/Desktop/CCDiary/diaries`)
+Reads the following files recorded by Claude Code:
+
+- `~/.claude/history.jsonl` - Input history across all projects
+- `~/.claude/projects/{encoded-path}/*.jsonl` - Detailed conversation logs per project
 
 ## Output
 
@@ -121,7 +108,39 @@ Today I worked on 3 projects, mainly focusing on API improvements and bug fixes.
 Resolved authentication issues and prepared for a stable release.
 ```
 
-## Architecture
+---
+
+## Development
+
+### Requirements
+
+- macOS 14.0+
+- Xcode 15+
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+
+### Build from Source
+
+```bash
+git clone https://github.com/Saqoosha/CCDiary.git
+cd CCDiary
+
+# Generate Xcode project
+xcodegen generate
+
+# Build
+xcodebuild -scheme CCDiary -configuration Debug -derivedDataPath build build
+
+# Run
+open build/Build/Products/Debug/CCDiary.app
+```
+
+Or open directly in Xcode:
+
+```bash
+open Package.swift
+```
+
+### Architecture
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
