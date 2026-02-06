@@ -45,10 +45,6 @@ This builds, notarizes, creates DMG, commits, tags, and creates GitHub Release.
 Analyze the actual code changes and write user-friendly release notes:
 
 ```markdown
-## CCDiary X.Y.Z
-
-Brief description of this release.
-
 ### Features (if new features added)
 - New feature description
 
@@ -58,6 +54,10 @@ Brief description of this release.
 ### Bug Fixes (if bugs fixed)
 - Fixed issue description
 ```
+
+**Important:**
+- Do NOT include a top-level title (e.g., `## CCDiary X.Y.Z`) — GitHub already shows the release title, so it would be duplicated
+- Do NOT include a Requirements section — it's static and doesn't need to be repeated every release
 
 ### 5. Update GitHub Release
 

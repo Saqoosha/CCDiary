@@ -67,13 +67,8 @@ echo "=== Creating GitHub Release ==="
 gh release create "$TAG" "$DMG_PATH" \
   --title "CCDiary ${VERSION}" \
   --notes "$(cat <<EOF
-## CCDiary ${VERSION}
-
 ### Changes
 - (Add release notes here)
-
-### Requirements
-- macOS 14.0 (Sonoma) or later
 EOF
 )"
 
