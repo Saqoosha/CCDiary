@@ -2,7 +2,7 @@
 
 ## Overview
 
-CCDiary is a macOS app that analyzes Claude Code, Cursor, and Codex conversation history and generates daily work diaries using AI (Claude API or Gemini API).
+CCDiary is a macOS app that analyzes Claude Code, Cursor, and Codex conversation history and generates daily work diaries using AI (Claude API, Gemini API, or OpenAI API).
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
@@ -28,11 +28,11 @@ CCDiary is a macOS app that analyzes Claude Code, Cursor, and Codex conversation
 └────────────┘  └────────────┘  └────────────┘  └────────────────┘
                                       │
                                       ▼
-                            ┌────────────────┐
-                            │   AI Services  │
-                            │   Claude API   │
-                            │   Gemini API   │
-                            └────────────────┘
+                            ┌─────────────────────┐
+                            │ Shared AIAPIService │
+                            │   Claude / Gemini   │
+                            │      / OpenAI       │
+                            └─────────────────────┘
 ```
 
 ## UI Architecture
@@ -91,7 +91,9 @@ final class DiaryViewModel {
 
     // Settings (synced with UserDefaults)
     var aiProvider: AIProvider
-    var model: String
+    var apiModel: String
+    var geminiModel: String
+    var openAIModel: String
     var diariesDirectoryPath: String
 }
 ```
@@ -102,12 +104,13 @@ final class DiaryViewModel {
 
 ```text
 1. loadInitialData()
-   ├── HistoryService.readHistory()
-   │   └── Parse ~/.claude/history.jsonl
-   ├── Extract unique dates with activity
+   ├── checkCursorPermission()
+   ├── AggregatorService.buildDateIndex()
+   ├── AggregatorService.getAllActivityDates()
    ├── DiaryStorage.loadAll()
    │   └── Scan diaries directory for *.md
-   └── Update datesWithActivity, datesWithDiary
+   ├── Update datesWithActivity, datesWithDiary
+   └── loadDataForDate(selectedDate)
 ```
 
 ### Date Selection
@@ -136,7 +139,10 @@ final class DiaryViewModel {
    │       ├── Filter by time range
    │       ├── Extract meaningful messages
    │       └── Truncate & limit messages
-   ├── AIService.generateDiary(activity)  // ClaudeAPI/GeminiAPI
+   ├── generateDiaryContent(activity, provider)
+   │   ├── Resolve provider key from Keychain
+   │   ├── Resolve provider service/model
+   │   └── Call Claude/Gemini/OpenAI service
    │   ├── Build prompt with project data
    │   ├── Call AI provider
    │   └── Post-process markdown
@@ -208,12 +214,20 @@ Multiple AI providers are supported for diary generation:
 
 | Service | Description |
 |---------|-------------|
+| `AIAPIService` | Common protocol used by all providers |
+| `AIAPIError` | Shared provider-aware error model |
 | `ClaudeAPIService` | Direct Anthropic API calls |
 | `GeminiAPIService` | Google Gemini API |
+| `OpenAIAPIService` | OpenAI Responses API calls |
 
 **Provider Selection:**
 
 Users can choose their preferred provider in Settings.
+
+Current model presets in Settings:
+- Claude: Haiku 4.5 / Sonnet 4.5 / Opus 4.5
+- Gemini: 2.5 Flash / 2.5 Pro / 3 Flash
+- OpenAI: GPT-5.2 / GPT-5 mini / GPT-5 nano
 
 **Common Prompt:**
 
@@ -229,7 +243,7 @@ Manages diary file I/O.
 
 | Method | Description |
 |--------|-------------|
-| `save(entry)` | Save diary to {date}.md |
+| `save(entry)` | Save diary to `YYYY/MM/{date}.md` |
 | `loadAll()` | Load all diary files |
 | `load(dateString)` | Load specific diary |
 | `exists(dateString)` | Check if diary exists |

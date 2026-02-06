@@ -15,7 +15,7 @@ English | [日本語](README.ja.md)
 - **Automatic History Collection** - Collects Claude Code, Cursor, and Codex chat history automatically
 - **Calendar-Centric UI** - Dynamically shows from earliest activity to end of current month
 - **Project Organization** - Organizes activities by project
-- **Multi-Provider Support** - Choose between Claude API or Gemini API
+- **Multi-Provider Support** - Choose between Claude API, Gemini API, and OpenAI API
 - **Large File Handling** - Efficiently processes 87MB+ log files with binary search optimization
 - **Markdown Output** - Saves and displays diaries in Markdown format
 
@@ -34,8 +34,14 @@ English | [日本語](README.ja.md)
 3. Select your preferred AI provider:
    - **Claude API** - Requires Anthropic API key
    - **Gemini API** - Requires Google AI API key
+   - **OpenAI API** - Requires OpenAI API key
 4. Enter your API key
 5. Click "Save"
+
+OpenAI models available in Settings:
+- `gpt-5.2`
+- `gpt-5-mini` (default)
+- `gpt-5-nano`
 
 ### Diaries Directory
 
