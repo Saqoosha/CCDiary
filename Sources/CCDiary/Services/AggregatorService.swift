@@ -15,6 +15,7 @@ actor AggregatorService {
     private let conversationService = ConversationService()
     private let statisticsCache = StatisticsCache()
     private let cursorService = CursorService()
+    private let codexService = CodexService()
 
     /// Aggregate activity data for a specific date
     /// Uses parallel processing for better performance
@@ -164,8 +165,10 @@ actor AggregatorService {
         let cursorActivities: [CursorProjectActivity]
         do {
             cursorActivities = try await cursorService.getActivityForDate(date)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            logger.warning("Failed to get Cursor activity: \(error.localizedDescription)")
+            logger.warning("Failed to get Cursor activity: \(String(describing: error))")
             cursorActivities = []
         }
         for activity in cursorActivities {
@@ -209,8 +212,60 @@ actor AggregatorService {
             cursorProjects.append(project)
         }
 
-        // Combine Claude Code and Cursor projects
-        var allProjects = projects + cursorProjects
+        // Get Codex activity for this date
+        var codexProjects: [ProjectActivity] = []
+        let codexActivities: [CodexProjectActivity]
+        do {
+            codexActivities = try await codexService.getActivityForDate(date)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            logger.warning("Failed to get Codex activity: \(String(describing: error))")
+            codexActivities = []
+        }
+
+        for activity in codexActivities {
+            let conversations = activity.messages.map { msg in
+                ConversationMessage(
+                    role: msg.role,
+                    content: msg.content.count <= maxContentLength
+                        ? msg.content
+                        : String(msg.content.prefix(maxContentLength)) + "...",
+                    timestamp: msg.timestamp
+                )
+            }
+
+            let limitedConversations: [ConversationMessage]
+            if conversations.count <= maxMessagesPerProject {
+                limitedConversations = conversations
+            } else {
+                let half = maxMessagesPerProject / 2
+                limitedConversations = Array(conversations.prefix(half)) + Array(conversations.suffix(half))
+            }
+
+            let totalChars = activity.messages.reduce(0) { $0 + $1.content.count }
+            let stats = ProjectStats(
+                totalMessages: conversations.count,
+                usedMessages: limitedConversations.count,
+                totalChars: totalChars,
+                usedChars: limitedConversations.reduce(0) { $0 + $1.content.count },
+                truncatedCount: activity.messages.filter { $0.content.count > maxContentLength }.count
+            )
+
+            var project = ProjectActivity(
+                path: activity.projectPath,
+                name: activity.projectName,
+                userInputs: activity.messages.filter { $0.role == .user }.map { $0.content },
+                conversations: limitedConversations,
+                timeRange: activity.timeRange,
+                stats: stats
+            )
+            project.source = .codex
+            codexProjects.append(project)
+        }
+
+        // Combine Claude Code, Cursor, and Codex projects
+        var allProjects = projects + cursorProjects + codexProjects
 
         // Sort all projects by first activity time
         allProjects.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
@@ -219,18 +274,13 @@ actor AggregatorService {
         let totalMessages = allProjects.reduce(0) { $0 + $1.conversations.count }
         logger.notice("aggregateForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (\(allProjects.count) projects, \(totalMessages) messages)")
 
+        let totalInputs = allProjects.reduce(0) { $0 + $1.userInputs.count }
+
         return DailyActivity(
             date: date,
             projects: allProjects,
-            totalInputs: dayHistory.count
+            totalInputs: totalInputs
         )
-    }
-
-    private func truncateContent(_ content: String, maxLength: Int) -> (String, Bool) {
-        if content.count <= maxLength {
-            return (content, false)
-        }
-        return (String(content.prefix(maxLength)) + "...", true)
     }
 
     /// Get quick statistics for a date (without full conversation content)
@@ -261,8 +311,10 @@ actor AggregatorService {
         var cursorActivities: [CursorProjectActivity] = []
         do {
             cursorActivities = try await cursorService.getActivityForDate(date)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            logger.warning("Failed to get Cursor activity: \(error.localizedDescription)")
+            logger.warning("Failed to get Cursor activity: \(String(describing: error))")
         }
         let cursorQuickStats = CursorQuickStats(
             projectCount: cursorActivities.count,
@@ -270,8 +322,23 @@ actor AggregatorService {
             messageCount: cursorActivities.reduce(0) { $0 + $1.messages.count }
         )
 
-        // Return nil only if we have no Claude Code AND no Cursor activity
-        if dayHistory.isEmpty && cursorQuickStats.projectCount == 0 {
+        // Get Codex activity (includes project details for badges)
+        var codexActivities: [CodexProjectActivity] = []
+        do {
+            codexActivities = try await codexService.getActivityForDate(date)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            logger.warning("Failed to get Codex activity: \(String(describing: error))")
+        }
+        let codexQuickStats = CodexQuickStats(
+            projectCount: codexActivities.count,
+            sessionCount: codexActivities.reduce(0) { $0 + $1.sessionCount },
+            messageCount: codexActivities.reduce(0) { $0 + $1.messages.count }
+        )
+
+        // Return nil only if there is no activity from any source
+        if dayHistory.isEmpty && cursorQuickStats.projectCount == 0 && codexQuickStats.projectCount == 0 {
             return nil
         }
         logger.notice("  filter/group: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms (\(projectGroups.count) projects)")
@@ -406,6 +473,19 @@ actor AggregatorService {
             projectSummaries.append(summary)
         }
 
+        // Add Codex projects to summaries
+        for activity in codexActivities {
+            var summary = ProjectSummary(
+                name: activity.projectName,
+                path: activity.projectPath,
+                messageCount: activity.messages.count,
+                timeRangeStart: activity.timeRangeStart,
+                timeRangeEnd: activity.timeRangeEnd
+            )
+            summary.source = .codex
+            projectSummaries.append(summary)
+        }
+
         // Sort all projects by first activity time
         projectSummaries.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
 
@@ -417,6 +497,9 @@ actor AggregatorService {
             cursorProjectCount: cursorQuickStats.projectCount,
             cursorSessionCount: cursorQuickStats.sessionCount,
             cursorMessageCount: cursorQuickStats.messageCount,
+            codexProjectCount: codexQuickStats.projectCount,
+            codexSessionCount: codexQuickStats.sessionCount,
+            codexMessageCount: codexQuickStats.messageCount,
             projects: projectSummaries
         )
 
@@ -429,12 +512,12 @@ actor AggregatorService {
         await conversationService.saveDateCache()
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (CC: \(statistics.ccProjectCount) proj/\(statistics.ccMessageCount) msgs, Cursor: \(statistics.cursorProjectCount) proj/\(statistics.cursorMessageCount) msgs)")
+        logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (CC: \(statistics.ccProjectCount) proj/\(statistics.ccMessageCount) msgs, Cursor: \(statistics.cursorProjectCount) proj/\(statistics.cursorMessageCount) msgs, Codex: \(statistics.codexProjectCount) proj/\(statistics.codexMessageCount) msgs)")
 
         return statistics
     }
 
-    /// Get all dates that have activity (Claude Code conversations + Cursor)
+    /// Get all dates that have activity (Claude Code conversations + Cursor + Codex)
     func getAllActivityDates() async throws -> Set<String> {
         var dates: Set<String> = []
 
@@ -449,8 +532,21 @@ actor AggregatorService {
             let cursorDates = try await cursorService.getAllDatesWithMessages()
             logger.notice("getAllActivityDates: Cursor dates = \(cursorDates.count) [\(cursorDates.sorted().suffix(5).joined(separator: ", "))]")
             dates.formUnion(cursorDates)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
-            logger.warning("Failed to get Cursor dates: \(error.localizedDescription)")
+            logger.warning("Failed to get Cursor dates: \(String(describing: error))")
+        }
+
+        // Also add Codex dates from cached index
+        do {
+            let codexDates = try await codexService.getAllDatesWithMessages()
+            logger.notice("getAllActivityDates: Codex dates = \(codexDates.count) [\(codexDates.sorted().suffix(5).joined(separator: ", "))]")
+            dates.formUnion(codexDates)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            logger.warning("Failed to get Codex dates: \(String(describing: error))")
         }
 
         logger.notice("getAllActivityDates: Total = \(dates.count) dates")
@@ -466,7 +562,14 @@ actor AggregatorService {
         do {
             _ = try await cursorService.buildDateIndexIfNeeded()
         } catch {
-            logger.warning("Failed to build Cursor date index: \(error.localizedDescription)")
+            logger.warning("Failed to build Cursor date index: \(String(describing: error))")
+        }
+
+        await progressCallback?("Building Codex index...")
+        do {
+            _ = try await codexService.buildDateIndexIfNeeded()
+        } catch {
+            logger.warning("Failed to build Codex date index: \(String(describing: error))")
         }
     }
 }

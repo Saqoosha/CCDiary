@@ -5,14 +5,14 @@ English | [日本語](README.ja.md)
 <p align="center">
   <img src="images/appicon.png" width="128" height="128" alt="CCDiary icon">
   <br>
-  A macOS app that automatically generates work diaries from Claude Code and Cursor chat history.
+  A macOS app that automatically generates work diaries from Claude Code, Cursor, and Codex chat history.
 </p>
 
 ![CCDiary screenshot](images/screenshot-v2.png)
 
 ## Features
 
-- **Automatic History Collection** - Collects Claude Code and Cursor chat history automatically
+- **Automatic History Collection** - Collects Claude Code, Cursor, and Codex chat history automatically
 - **Calendar-Centric UI** - Dynamically shows from earliest activity to end of current month
 - **Project Organization** - Organizes activities by project
 - **Multi-Provider Support** - Choose between Claude API or Gemini API
@@ -74,6 +74,11 @@ By default, diaries are saved to `~/Documents/CCDiary/`. You can change this in 
 ### Cursor
 
 - `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` - Chat history database
+
+### Codex CLI / App
+
+- `~/.codex/sessions/**/*.jsonl` - Current session event logs
+- `~/.codex/sessions/**/*.json` - Legacy session format
 
 ## Output
 

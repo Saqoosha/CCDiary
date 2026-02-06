@@ -4,7 +4,7 @@ import Foundation
 enum DiaryPromptBuilder {
     /// System prompt for diary generation
     static let systemPrompt = """
-    Claude Codeの会話履歴から作業日記を日本語で作成してください。
+    Claude Code / Cursor / Codex の開発チャット履歴から作業日記を日本語で作成してください。
 
     ルール:
     - 各プロジェクトで「何をやったか」を2-4個の箇条書きで書く
@@ -23,7 +23,7 @@ enum DiaryPromptBuilder {
 
     /// System prompt for structured output (JSON)
     static let structuredSystemPrompt = """
-    あなたは技術日記アシスタントです。Claude Codeの会話履歴を分析して、作業日記を生成してください。
+    あなたは技術日記アシスタントです。Claude Code / Cursor / Codex の開発チャット履歴を分析して、作業日記を生成してください。
 
     ガイドライン:
     - 会話の詳細ではなく、何を達成したかに焦点を当てる
@@ -70,6 +70,6 @@ enum DiaryPromptBuilder {
 
     /// Build prompt with instruction prefix
     static func buildPromptWithInstruction(activity: DailyActivity) -> String {
-        "以下のClaude Code会話履歴から作業日記を生成してください。\n\n\(buildPrompt(activity: activity))"
+        "以下のClaude Code / Cursor / Codex の開発チャット履歴から作業日記を生成してください。\n\n\(buildPrompt(activity: activity))"
     }
 }

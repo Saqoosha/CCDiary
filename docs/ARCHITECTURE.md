@@ -2,7 +2,7 @@
 
 ## Overview
 
-CCDiary is a macOS app that analyzes Claude Code and Cursor conversation history and generates daily work diaries using AI (Claude API or Gemini API).
+CCDiary is a macOS app that analyzes Claude Code, Cursor, and Codex conversation history and generates daily work diaries using AI (Claude API or Gemini API).
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
@@ -76,7 +76,7 @@ Main view model managing all UI state.
 @Observable @MainActor
 final class DiaryViewModel {
     // Calendar state
-    var datesWithActivity: Set<String>  // Dates with Claude Code or Cursor activity
+    var datesWithActivity: Set<String>  // Dates with Claude Code/Cursor/Codex activity
     var datesWithDiary: Set<String>     // Dates with generated diary
     var selectedDate: Date
 
@@ -182,15 +182,25 @@ Reads Cursor chat history from SQLite database.
 | `getAllDatesWithMessages()` | Get all dates with Cursor messages |
 | `buildDateIndexIfNeeded()` | Build date index for fast lookups |
 
+### CodexService
+
+Reads Codex CLI/App chat history from session files.
+
+| Method | Description |
+|--------|-------------|
+| `getActivityForDate(date)` | Get all Codex activity for a date |
+| `getAllDatesWithMessages()` | Get all dates with Codex messages |
+| `buildDateIndexIfNeeded()` | Build date index for fast lookups |
+
 ### AggregatorService
 
-Orchestrates data collection from Claude Code and Cursor.
+Orchestrates data collection from Claude Code, Cursor, and Codex.
 
 | Method | Description |
 |--------|-------------|
 | `aggregateForDate(date)` | Full aggregation with conversation content |
 | `getQuickStatistics(date)` | Fast stats without reading conversation content |
-| `getAllActivityDates()` | Get all dates with activity from both sources |
+| `getAllActivityDates()` | Get all dates with activity from all sources |
 
 ### AI Services
 
@@ -264,6 +274,9 @@ struct DayStatistics: Sendable {
     let cursorProjectCount: Int
     let cursorSessionCount: Int
     let cursorMessageCount: Int
+    let codexProjectCount: Int
+    let codexSessionCount: Int
+    let codexMessageCount: Int
     let projects: [ProjectSummary]
 }
 
@@ -341,6 +354,7 @@ CCDiary/
     │   ├── AggregatorService.swift
     │   ├── ClaudeAPIService.swift
     │   ├── ConversationService.swift
+    │   ├── CodexService.swift
     │   ├── CursorService.swift
     │   ├── DateFormatting.swift
     │   ├── DiaryFormatter.swift
@@ -406,6 +420,16 @@ SQLite database containing chat history.
 #### ~/Library/Application Support/Cursor/User/workspaceStorage/{hash}/state.vscdb
 
 Per-workspace SQLite database containing composer session metadata.
+
+### Codex CLI / App
+
+#### ~/.codex/sessions/**/*.jsonl
+
+Current event-based session format (session metadata + response items).
+
+#### ~/.codex/sessions/**/*.json
+
+Legacy session format with `session` + `items[]`.
 
 ## Token Optimization
 

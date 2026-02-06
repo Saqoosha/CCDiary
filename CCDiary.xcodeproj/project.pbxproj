@@ -25,6 +25,8 @@
 		4BC96473D1471C1E8277A5E7 /* CalendarGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745D0B858C5336C206EC3B90 /* CalendarGridView.swift */; };
 		5AE512D4C5BE7F0E0A4D2349 /* StatisticsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA9C62672EE2B89B208784 /* StatisticsCache.swift */; };
 		5B49E01406D8943A0B1716ED /* DateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E88003AE1874145387519C /* DateFormatting.swift */; };
+		5B723C1E1A195175675C0FC7 /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00A4B160F28B8F34A88949A /* CodexService.swift */; };
+		5FD60FC22B0E5DE3ADE743FC /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00A4B160F28B8F34A88949A /* CodexService.swift */; };
 		5FDF849FD480A982CD056AE5 /* StatisticsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA9C62672EE2B89B208784 /* StatisticsCache.swift */; };
 		65B3338439B0AB8B2B568C26 /* GeminiAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C377223951575EB451C2E330 /* GeminiAPIService.swift */; };
 		6E803ED8ED6F60942E03CABD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668DB858F0248FC55CDEECC2 /* main.swift */; };
@@ -98,6 +100,7 @@
 		AA3B5A418445E87418733ABC /* MarkdownWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownWebView.swift; sourceTree = "<group>"; };
 		AC91CD395E14EE8730D94428 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B9F263F335E46E6A0FD26DE3 /* AIProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIProvider.swift; sourceTree = "<group>"; };
+		C00A4B160F28B8F34A88949A /* CodexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexService.swift; sourceTree = "<group>"; };
 		C377223951575EB451C2E330 /* GeminiAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiAPIService.swift; sourceTree = "<group>"; };
 		D81F511B1E461292AB6E8EFD /* CCDiaryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CCDiaryApp.swift; sourceTree = "<group>"; };
 		D9E88003AE1874145387519C /* DateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatting.swift; sourceTree = "<group>"; };
@@ -192,6 +195,7 @@
 			children = (
 				6E338C06E9A570F11ADC2244 /* AggregatorService.swift */,
 				F5DEFF2DE14B8E54A62176E2 /* ClaudeAPIService.swift */,
+				C00A4B160F28B8F34A88949A /* CodexService.swift */,
 				13ED9C7364C48D5327F732C5 /* ConversationService.swift */,
 				46E36AF325FE05091C0C44DB /* CursorService.swift */,
 				D9E88003AE1874145387519C /* DateFormatting.swift */,
@@ -365,6 +369,7 @@
 				CBD0BF48595B779EA4D117ED /* AggregatorService.swift in Sources */,
 				0ADD28027CE2180E50EB26E2 /* BenchmarkApp.swift in Sources */,
 				6EE7C3F8467BC1D1752EACD8 /* ClaudeAPIService.swift in Sources */,
+				5B723C1E1A195175675C0FC7 /* CodexService.swift in Sources */,
 				C38FF0A78AB7ADEC38AE36C9 /* ConversationEntry.swift in Sources */,
 				AAE441CC223709AA0CADECFB /* ConversationService.swift in Sources */,
 				8A12F68A9E364A46FDAC0EAD /* CursorHistoryEntry.swift in Sources */,
@@ -397,6 +402,7 @@
 				842D9C34F4936A991899803A /* CCDiaryApp.swift in Sources */,
 				4BC96473D1471C1E8277A5E7 /* CalendarGridView.swift in Sources */,
 				EC4829B4776366DFF3198B85 /* ClaudeAPIService.swift in Sources */,
+				5FD60FC22B0E5DE3ADE743FC /* CodexService.swift in Sources */,
 				2631E6194C016F4323B674EE /* ContentView.swift in Sources */,
 				ED9999DE615C5945476E2D15 /* ConversationEntry.swift in Sources */,
 				BE43B2BDAEDADB3042037B60 /* ConversationService.swift in Sources */,

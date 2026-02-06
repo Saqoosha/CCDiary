@@ -50,19 +50,29 @@ private actor CursorDateCache {
     }
 
     private func loadFromDisk() {
-        guard let data = try? Data(contentsOf: Self.cacheFileURL),
-              let stored = try? JSONDecoder().decode(StoredCursorDateCache.self, from: data) else {
-            return
+        let url = Self.cacheFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let stored = try JSONDecoder().decode(StoredCursorDateCache.self, from: data)
+            dates = Set(stored.dates)
+            lastDBModTime = stored.dbModTime
+            logger.info("Loaded Cursor date cache: \(self.dates.count) dates")
+        } catch {
+            logger.warning("Cursor date cache corrupted, deleting: \(error)")
+            try? FileManager.default.removeItem(at: url)
         }
-        dates = Set(stored.dates)
-        lastDBModTime = stored.dbModTime
-        logger.info("Loaded Cursor date cache: \(self.dates.count) dates")
     }
 
     private func saveToDisk() {
         let stored = StoredCursorDateCache(dates: Array(dates), dbModTime: lastDBModTime)
-        guard let data = try? JSONEncoder().encode(stored) else { return }
-        try? data.write(to: Self.cacheFileURL)
+        do {
+            let data = try JSONEncoder().encode(stored)
+            try data.write(to: Self.cacheFileURL)
+        } catch {
+            logger.error("Failed to save Cursor date cache: \(error)")
+        }
     }
 
     private struct StoredCursorDateCache: Codable {
@@ -656,24 +666,6 @@ actor CursorService {
         return stats.hasActivity
     }
 
-    /// Get quick stats for a date (project count, session count, message count)
-    func getQuickStatsForDate(_ date: Date) async throws -> CursorQuickStats {
-        guard isAvailable() else {
-            return CursorQuickStats(projectCount: 0, sessionCount: 0, messageCount: 0)
-        }
-
-        let activities = try await getActivityForDate(date)
-
-        let projectCount = activities.count
-        let sessionCount = activities.reduce(0) { $0 + $1.composerCount }
-        let messageCount = activities.reduce(0) { $0 + $1.messages.count }
-
-        return CursorQuickStats(
-            projectCount: projectCount,
-            sessionCount: sessionCount,
-            messageCount: messageCount
-        )
-    }
 }
 
 /// Quick stats for Cursor activity

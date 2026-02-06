@@ -98,6 +98,7 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
 - `Sources/CCDiary/Services/` - Business logic and data access
   - `HistoryService` - Reads Claude Code history
   - `ConversationService` - Reads conversation JSONL files (with binary search optimization)
+  - `CodexService` - Reads Codex CLI/App session history (jsonl + legacy json)
   - `AggregatorService` - Aggregates daily activity data
   - `StatisticsCache` - Caches statistics for past dates
   - `DiaryStorage` - Saves/loads diary entries

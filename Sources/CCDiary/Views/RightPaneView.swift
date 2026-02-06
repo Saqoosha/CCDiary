@@ -9,6 +9,7 @@ struct RightPaneView: View {
     // App icons (loaded once)
     private let claudeIcon = AppIconHelper.icon(for: "Claude")
     private let cursorIcon = AppIconHelper.icon(for: "Cursor")
+    private let codexIcon = AppIconHelper.icon(for: "Codex")
 
     // Show header only when diary exists or no activity
     private var shouldShowHeader: Bool {
@@ -70,6 +71,19 @@ struct RightPaneView: View {
                             StatBadge(value: stats.cursorProjectCount, label: "proj")
                             StatBadge(value: stats.cursorSessionCount, label: "sess")
                             StatBadge(value: stats.cursorMessageCount, label: "msgs")
+                        }
+                    }
+
+                    // Codex stats
+                    if stats.codexProjectCount > 0 {
+                        HStack(spacing: 8) {
+                            Image(nsImage: codexIcon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 20, height: 20)
+                            StatBadge(value: stats.codexProjectCount, label: "proj")
+                            StatBadge(value: stats.codexSessionCount, label: "sess")
+                            StatBadge(value: stats.codexMessageCount, label: "msgs")
                         }
                     }
                 }
@@ -734,6 +748,8 @@ enum AppIconHelper {
             return icon(for: "Claude")
         case .cursor:
             return icon(for: "Cursor")
+        case .codex:
+            return icon(for: "Codex")
         case .all:
             return NSWorkspace.shared.icon(for: .applicationBundle)
         }

@@ -5,14 +5,14 @@
 <p align="center">
   <img src="images/appicon.png" width="128" height="128" alt="CCDiary icon">
   <br>
-  Claude CodeとCursorのチャット履歴から作業日記を自動生成するmacOSアプリ
+  Claude CodeとCursorとCodexのチャット履歴から作業日記を自動生成するmacOSアプリ
 </p>
 
 ![CCDiary screenshot](images/screenshot-v2.png)
 
 ## 特徴
 
-- **自動履歴収集** - Claude CodeとCursorのチャット履歴を自動で収集
+- **自動履歴収集** - Claude CodeとCursorとCodexのチャット履歴を自動で収集
 - **カレンダー中心のUI** - 最初のアクティビティから今月末までを動的に表示
 - **プロジェクト別整理** - アクティビティをプロジェクトごとに整理
 - **複数プロバイダー対応** - Claude API / Gemini APIから選択可能
@@ -74,6 +74,11 @@
 ### Cursor
 
 - `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` - チャット履歴データベース
+
+### Codex CLI / App
+
+- `~/.codex/sessions/**/*.jsonl` - 現行のセッションイベントログ
+- `~/.codex/sessions/**/*.json` - 旧セッション形式
 
 ## 出力
 
