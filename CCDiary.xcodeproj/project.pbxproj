@@ -28,6 +28,7 @@
 		5B723C1E1A195175675C0FC7 /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00A4B160F28B8F34A88949A /* CodexService.swift */; };
 		5FD60FC22B0E5DE3ADE743FC /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00A4B160F28B8F34A88949A /* CodexService.swift */; };
 		5FDF849FD480A982CD056AE5 /* StatisticsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA9C62672EE2B89B208784 /* StatisticsCache.swift */; };
+		602931AD18DC3FB4EB4B8223 /* OpenAIAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F5F1094D13539CAA155DA20 /* OpenAIAPIService.swift */; };
 		65B3338439B0AB8B2B568C26 /* GeminiAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C377223951575EB451C2E330 /* GeminiAPIService.swift */; };
 		6E803ED8ED6F60942E03CABD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668DB858F0248FC55CDEECC2 /* main.swift */; };
 		6EE7C3F8467BC1D1752EACD8 /* ClaudeAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5DEFF2DE14B8E54A62176E2 /* ClaudeAPIService.swift */; };
@@ -40,7 +41,9 @@
 		8B9D40F66DF0E11F931EDDCF /* appicon_foreground.png in Resources */ = {isa = PBXBuildFile; fileRef = 7C1186B62FFF7EBECD2D46E2 /* appicon_foreground.png */; };
 		8C4BAE91C4B1451BE3762EB2 /* DiaryContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9BF539C0A5972E36977C85 /* DiaryContent.swift */; };
 		8FBDD77C0AFFA855FEC5152F /* HistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46BECB814F0F1E14416EFFCC /* HistoryEntry.swift */; };
+		921CB0FE3D4934DA1DF5855C /* OpenAIAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F5F1094D13539CAA155DA20 /* OpenAIAPIService.swift */; };
 		A1004F60229882715591FE5E /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8460D0061EB3AF6427D8F4 /* KeychainHelper.swift */; };
+		A5D2ABDCB5D0CB7FD573A544 /* AIAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69B2E61828828880B3A24D1D /* AIAPIService.swift */; };
 		A7633DA4DCEFF59606204BDC /* AIProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F263F335E46E6A0FD26DE3 /* AIProvider.swift */; };
 		A9AFC2AED8059FB353233B44 /* DayStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E7080685B398ADAC65F2869 /* DayStatistics.swift */; };
 		AAE441CC223709AA0CADECFB /* ConversationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13ED9C7364C48D5327F732C5 /* ConversationService.swift */; };
@@ -53,6 +56,7 @@
 		BE43B2BDAEDADB3042037B60 /* ConversationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13ED9C7364C48D5327F732C5 /* ConversationService.swift */; };
 		BF609700F5356D8ABC2F57A2 /* github-markdown.css in Resources */ = {isa = PBXBuildFile; fileRef = 707F588A76ECBAAF1EA16F55 /* github-markdown.css */; };
 		C38FF0A78AB7ADEC38AE36C9 /* ConversationEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE5B79ED4010C2B633517F8 /* ConversationEntry.swift */; };
+		C96A893551059452E95CE9D9 /* AIAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69B2E61828828880B3A24D1D /* AIAPIService.swift */; };
 		CBD0BF48595B779EA4D117ED /* AggregatorService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E338C06E9A570F11ADC2244 /* AggregatorService.swift */; };
 		CF4EAE30438715CA2D608F20 /* MarkdownWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3B5A418445E87418733ABC /* MarkdownWebView.swift */; };
 		D04317DA80130C42BB6DB4E2 /* DiaryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96E37819BAAB539795968C94 /* DiaryEntry.swift */; };
@@ -86,6 +90,7 @@
 		5B35D77AA63C0BEC1CACCB9A /* HistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryService.swift; sourceTree = "<group>"; };
 		668DB858F0248FC55CDEECC2 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		6832497A96AB188148F29518 /* ParseResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParseResult.swift; sourceTree = "<group>"; };
+		69B2E61828828880B3A24D1D /* AIAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAPIService.swift; sourceTree = "<group>"; };
 		6E338C06E9A570F11ADC2244 /* AggregatorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregatorService.swift; sourceTree = "<group>"; };
 		707F588A76ECBAAF1EA16F55 /* github-markdown.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-markdown.css"; sourceTree = "<group>"; };
 		745D0B858C5336C206EC3B90 /* CalendarGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarGridView.swift; sourceTree = "<group>"; };
@@ -94,6 +99,7 @@
 		7C1186B62FFF7EBECD2D46E2 /* appicon_foreground.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = appicon_foreground.png; sourceTree = "<group>"; };
 		8104B0331BE18D9B6D65E27F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8CCDE00FEF3FEA075E4576B2 /* DiaryFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryFormatter.swift; sourceTree = "<group>"; };
+		8F5F1094D13539CAA155DA20 /* OpenAIAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIAPIService.swift; sourceTree = "<group>"; };
 		90F54A1C0A853316C231CCEE /* BenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkApp.swift; sourceTree = "<group>"; };
 		96E37819BAAB539795968C94 /* DiaryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryEntry.swift; sourceTree = "<group>"; };
 		9E7080685B398ADAC65F2869 /* DayStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayStatistics.swift; sourceTree = "<group>"; };
@@ -194,6 +200,7 @@
 			isa = PBXGroup;
 			children = (
 				6E338C06E9A570F11ADC2244 /* AggregatorService.swift */,
+				69B2E61828828880B3A24D1D /* AIAPIService.swift */,
 				F5DEFF2DE14B8E54A62176E2 /* ClaudeAPIService.swift */,
 				C00A4B160F28B8F34A88949A /* CodexService.swift */,
 				13ED9C7364C48D5327F732C5 /* ConversationService.swift */,
@@ -206,6 +213,7 @@
 				C377223951575EB451C2E330 /* GeminiAPIService.swift */,
 				5B35D77AA63C0BEC1CACCB9A /* HistoryService.swift */,
 				EB8460D0061EB3AF6427D8F4 /* KeychainHelper.swift */,
+				8F5F1094D13539CAA155DA20 /* OpenAIAPIService.swift */,
 				6832497A96AB188148F29518 /* ParseResult.swift */,
 				05EA9C62672EE2B89B208784 /* StatisticsCache.swift */,
 			);
@@ -364,6 +372,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C96A893551059452E95CE9D9 /* AIAPIService.swift in Sources */,
 				AC78A5D4B1ED5B10D69F35AA /* AIProvider.swift in Sources */,
 				DBE770D0F6DFCE8077CE15D3 /* ActivitySource.swift in Sources */,
 				CBD0BF48595B779EA4D117ED /* AggregatorService.swift in Sources */,
@@ -386,6 +395,7 @@
 				F991339BD105AC649CDD91B2 /* HistoryEntry.swift in Sources */,
 				F71EFC0FAEA2D714A00A4AE3 /* HistoryService.swift in Sources */,
 				A1004F60229882715591FE5E /* KeychainHelper.swift in Sources */,
+				921CB0FE3D4934DA1DF5855C /* OpenAIAPIService.swift in Sources */,
 				F9C51D7D45BE88973B738EA4 /* ParseResult.swift in Sources */,
 				FDD346143A182F807EDC7C01 /* ProjectActivity.swift in Sources */,
 				5AE512D4C5BE7F0E0A4D2349 /* StatisticsCache.swift in Sources */,
@@ -396,6 +406,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5D2ABDCB5D0CB7FD573A544 /* AIAPIService.swift in Sources */,
 				A7633DA4DCEFF59606204BDC /* AIProvider.swift in Sources */,
 				86E4299414327508121D0771 /* ActivitySource.swift in Sources */,
 				B4FA2E38058177385B146287 /* AggregatorService.swift in Sources */,
@@ -421,6 +432,7 @@
 				2E107192654152188B9D9F71 /* HistoryService.swift in Sources */,
 				0850E575D41C67A28AFF2B32 /* KeychainHelper.swift in Sources */,
 				CF4EAE30438715CA2D608F20 /* MarkdownWebView.swift in Sources */,
+				602931AD18DC3FB4EB4B8223 /* OpenAIAPIService.swift in Sources */,
 				8829FDE55F4146EAFD914714 /* ParseResult.swift in Sources */,
 				2DC67A0A9BE52E3D2F6F8287 /* ProjectActivity.swift in Sources */,
 				86E8505AC12E27C3A16CD773 /* RightPaneView.swift in Sources */,

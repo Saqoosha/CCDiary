@@ -102,7 +102,10 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
   - `AggregatorService` - Aggregates daily activity data
   - `StatisticsCache` - Caches statistics for past dates
   - `DiaryStorage` - Saves/loads diary entries
+  - `AIAPIService` - Common protocol/error model for AI providers
   - `ClaudeAPIService` - Generates diaries via Claude API
+  - `GeminiAPIService` - Generates diaries via Gemini API
+  - `OpenAIAPIService` - Generates diaries via OpenAI API
 
 ## Performance Optimizations
 

@@ -1,11 +1,11 @@
 import Foundation
 
 /// Service for calling Claude API
-actor ClaudeAPIService {
+actor ClaudeAPIService: AIAPIService {
     private let baseURL = URL(string: "https://api.anthropic.com/v1/messages")!
 
     /// Generate diary content from activity data
-    func generateDiary(activity: DailyActivity, apiKey: String, model: String = "claude-haiku-4-5-20251101") async throws -> DiaryContent {
+    func generateDiary(activity: DailyActivity, apiKey: String, model: String) async throws -> DiaryContent {
         let userPrompt = DiaryPromptBuilder.buildPromptWithInstruction(activity: activity)
 
         var request = URLRequest(url: baseURL)
@@ -32,46 +32,27 @@ actor ClaudeAPIService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw ClaudeAPIError.invalidResponse
+            throw AIAPIError.invalidResponse(provider: .claudeAPI)
         }
 
         guard httpResponse.statusCode == 200 else {
             if let errorBody = String(data: data, encoding: .utf8) {
-                throw ClaudeAPIError.apiError(statusCode: httpResponse.statusCode, message: errorBody)
+                throw AIAPIError.apiError(provider: .claudeAPI, statusCode: httpResponse.statusCode, message: errorBody)
             }
-            throw ClaudeAPIError.apiError(statusCode: httpResponse.statusCode, message: "Unknown error")
+            throw AIAPIError.apiError(provider: .claudeAPI, statusCode: httpResponse.statusCode, message: "Unknown error")
         }
 
-        let responseJSON = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let responseBody = String(data: data, encoding: .utf8)
+        let responseJSON = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         guard let content = responseJSON?["content"] as? [[String: Any]],
               let firstBlock = content.first,
               let text = firstBlock["text"] as? String else {
-            throw ClaudeAPIError.invalidResponseFormat
+            throw AIAPIError.invalidResponseFormat(provider: .claudeAPI, responseBody: responseBody)
         }
 
         return DiaryContent(
             date: activity.date,
             rawMarkdown: text
         )
-    }
-}
-
-enum ClaudeAPIError: LocalizedError {
-    case invalidResponse
-    case invalidResponseFormat
-    case apiError(statusCode: Int, message: String)
-    case missingAPIKey
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidResponse:
-            return "Invalid response from API"
-        case .invalidResponseFormat:
-            return "Unexpected response format"
-        case .apiError(let statusCode, let message):
-            return "API error (\(statusCode)): \(message)"
-        case .missingAPIKey:
-            return "API key not configured"
-        }
     }
 }

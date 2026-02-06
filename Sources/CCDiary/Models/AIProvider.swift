@@ -4,6 +4,7 @@ import Foundation
 enum AIProvider: String, CaseIterable {
     case claudeAPI = "claudeAPI"
     case gemini = "gemini"
+    case openai = "openai"
 
     var displayName: String {
         switch self {
@@ -11,19 +12,19 @@ enum AIProvider: String, CaseIterable {
             return "Claude API"
         case .gemini:
             return "Gemini"
+        case .openai:
+            return "OpenAI API"
         }
     }
 
-    var requiresAPIKey: Bool {
-        return true
-    }
-
-    var keychainService: String? {
+    var keychainService: String {
         switch self {
         case .claudeAPI:
             return KeychainHelper.claudeAPIService
         case .gemini:
             return KeychainHelper.geminiAPIService
+        case .openai:
+            return KeychainHelper.openAIAPIService
         }
     }
 }

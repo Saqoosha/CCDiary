@@ -5,6 +5,7 @@ import Security
 enum KeychainHelper {
     static let claudeAPIService = "sh.saqoo.CCDiary.claude-api-key"
     static let geminiAPIService = "sh.saqoo.CCDiary.gemini-api-key"
+    static let openAIAPIService = "sh.saqoo.CCDiary.openai-api-key"
 
     // Legacy identifiers for migration
     private static let legacyClaudeAPIService = "com.ccdiary.claude-api-key"
@@ -36,6 +37,7 @@ enum KeychainHelper {
                 delete(service: legacyGeminiAPIService)
             }
         }
+
     }
 
     /// Save a key to the Keychain

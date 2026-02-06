@@ -4,10 +4,12 @@ struct SettingsView: View {
     @AppStorage("aiProvider") private var aiProviderRaw = AIProvider.claudeAPI.rawValue
     @AppStorage("claudeAPIModel") private var apiModel = "claude-haiku-4-5-20251101"
     @AppStorage("geminiModel") private var geminiModel = "gemini-2.5-flash"
+    @AppStorage("openAIModel") private var openAIModel = "gpt-5-mini"
     @AppStorage("diariesDirectory") private var diariesDirectory = ""
 
     @State private var claudeAPIKey = ""
     @State private var geminiAPIKey = ""
+    @State private var openAIAPIKey = ""
     @State private var showingSaveConfirmation = false
     @State private var saveConfirmationMessage = ""
 
@@ -25,6 +27,12 @@ struct SettingsView: View {
         ("gemini-2.5-flash", "2.5 Flash"),
         ("gemini-2.5-pro", "2.5 Pro"),
         ("gemini-3-flash", "3 Flash")
+    ]
+
+    private let openAIModels = [
+        ("gpt-5.2", "GPT-5.2"),
+        ("gpt-5-mini", "GPT-5 mini"),
+        ("gpt-5-nano", "GPT-5 nano")
     ]
 
     var body: some View {
@@ -57,6 +65,8 @@ struct SettingsView: View {
                     claudeAPIConfig
                 case .gemini:
                     geminiConfig
+                case .openai:
+                    openAIConfig
                 }
             }
             .padding()
@@ -178,6 +188,53 @@ struct SettingsView: View {
         }
     }
 
+    private var openAIConfig: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Model")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Picker("", selection: $openAIModel) {
+                    ForEach(openAIModels, id: \.0) { modelId, displayName in
+                        Text(displayName).tag(modelId)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("API Key")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
+                    if KeychainHelper.load(service: KeychainHelper.openAIAPIService) != nil {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    SecureField("sk-...", text: $openAIAPIKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button("Save") {
+                        saveAPIKey(openAIAPIKey, service: KeychainHelper.openAIAPIService)
+                    }
+                    .disabled(openAIAPIKey.isEmpty)
+                }
+
+                Link("Get API key from platform.openai.com",
+                     destination: URL(string: "https://platform.openai.com/api-keys")!)
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+            }
+        }
+    }
+
     private var storageConfig: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Storage")
@@ -221,6 +278,9 @@ struct SettingsView: View {
         }
         if let key = KeychainHelper.load(service: KeychainHelper.geminiAPIService) {
             geminiAPIKey = key
+        }
+        if let key = KeychainHelper.load(service: KeychainHelper.openAIAPIService) {
+            openAIAPIKey = key
         }
     }
 

@@ -138,6 +138,7 @@ final class DiaryViewModel {
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
     var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
     var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
+    var openAIModel: String = UserDefaults.standard.string(forKey: "openAIModel") ?? "gpt-5-mini"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
     @ObservationIgnored
@@ -148,6 +149,9 @@ final class DiaryViewModel {
 
     @ObservationIgnored
     private let geminiAPI = GeminiAPIService()
+
+    @ObservationIgnored
+    private let openAIAPI = OpenAIAPIService()
 
     @ObservationIgnored
     private var storage: DiaryStorage?
@@ -177,11 +181,13 @@ final class DiaryViewModel {
         let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
         let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
         let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
+        let newOpenAIModel = UserDefaults.standard.string(forKey: "openAIModel") ?? "gpt-5-mini"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
         if aiProvider != newProvider { aiProvider = newProvider }
         if apiModel != newAPIModel { apiModel = newAPIModel }
         if geminiModel != newGeminiModel { geminiModel = newGeminiModel }
+        if openAIModel != newOpenAIModel { openAIModel = newOpenAIModel }
         if diariesDirectoryPath != newPath {
             diariesDirectoryPath = newPath
             storage = nil
@@ -354,27 +360,7 @@ final class DiaryViewModel {
 
             generationProgress = "Generating diary with \(aiProvider.displayName)..."
 
-            let content: DiaryContent
-            switch aiProvider {
-            case .claudeAPI:
-                guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
-                    throw ClaudeAPIError.missingAPIKey
-                }
-                content = try await claudeAPI.generateDiary(
-                    activity: activity,
-                    apiKey: apiKey,
-                    model: apiModel
-                )
-            case .gemini:
-                guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {
-                    throw GeminiAPIError.missingAPIKey
-                }
-                content = try await geminiAPI.generateDiary(
-                    activity: activity,
-                    apiKey: apiKey,
-                    model: geminiModel
-                )
-            }
+            let content = try await generateDiaryContent(activity: activity, provider: aiProvider)
 
             let entry = DiaryFormatter.format(content)
 
@@ -471,30 +457,11 @@ final class DiaryViewModel {
                     try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
                 }
 
-                switch aiProvider {
-                case .claudeAPI:
-                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.claudeAPIService) else {
-                        throw ClaudeAPIError.missingAPIKey
-                    }
-                    return try await claudeAPI.generateDiary(
-                        activity: activity,
-                        apiKey: apiKey,
-                        model: apiModel
-                    )
-                case .gemini:
-                    guard let apiKey = KeychainHelper.load(service: KeychainHelper.geminiAPIService) else {
-                        throw GeminiAPIError.missingAPIKey
-                    }
-                    return try await geminiAPI.generateDiary(
-                        activity: activity,
-                        apiKey: apiKey,
-                        model: geminiModel
-                    )
-                }
+                return try await generateDiaryContent(activity: activity, provider: aiProvider)
             } catch {
                 lastError = error
-                // Don't retry for non-network errors (like missing API key)
-                if (error as NSError).domain != NSURLErrorDomain {
+                // Don't retry for errors that are not transient.
+                if !shouldRetry(error) {
                     throw error
                 }
             }
@@ -507,6 +474,64 @@ final class DiaryViewModel {
 
     private func formatDateString(_ date: Date) -> String {
         DateFormatting.iso.string(from: date)
+    }
+
+    private func generateDiaryContent(activity: DailyActivity, provider: AIProvider) async throws -> DiaryContent {
+        guard let apiKey = KeychainHelper.load(service: provider.keychainService) else {
+            throw AIAPIError.missingAPIKey(provider: provider)
+        }
+
+        let service = service(for: provider)
+        return try await service.generateDiary(
+            activity: activity,
+            apiKey: apiKey,
+            model: model(for: provider)
+        )
+    }
+
+    private func service(for provider: AIProvider) -> any AIAPIService {
+        switch provider {
+        case .claudeAPI:
+            return claudeAPI
+        case .gemini:
+            return geminiAPI
+        case .openai:
+            return openAIAPI
+        }
+    }
+
+    private func model(for provider: AIProvider) -> String {
+        switch provider {
+        case .claudeAPI:
+            return apiModel
+        case .gemini:
+            return geminiModel
+        case .openai:
+            return openAIModel
+        }
+    }
+
+    private func shouldRetry(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            let retryableNetworkCodes: Set<Int> = [
+                NSURLErrorTimedOut,
+                NSURLErrorCannotFindHost,
+                NSURLErrorCannotConnectToHost,
+                NSURLErrorDNSLookupFailed,
+                NSURLErrorNetworkConnectionLost,
+                NSURLErrorNotConnectedToInternet,
+                NSURLErrorInternationalRoamingOff,
+                NSURLErrorCallIsActive,
+                NSURLErrorDataNotAllowed,
+                NSURLErrorCannotLoadFromNetwork
+            ]
+            return retryableNetworkCodes.contains(nsError.code)
+        }
+        if let apiError = error as? AIAPIError {
+            return apiError.isRetryable
+        }
+        return false
     }
 
     private func showErrorMessage(_ message: String) {
