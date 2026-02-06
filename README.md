@@ -39,7 +39,7 @@ English | [日本語](README.ja.md)
 
 ### Diaries Directory
 
-By default, diaries are saved to `~/Documents/CCDiary/`. You can change this in Settings.
+By default, diaries are saved to `~/Documents/CCDiary/` in `YYYY/MM/YYYY-MM-DD.md` format. You can change this in Settings.
 
 ## Usage
 
@@ -86,9 +86,11 @@ Diaries are saved in Markdown format:
 
 ```
 ~/Documents/CCDiary/
-├── 2026-01-20.md
-├── 2026-01-21.md
-└── 2026-01-22.md
+└── 2026/
+    └── 01/
+        ├── 2026-01-20.md
+        ├── 2026-01-21.md
+        └── 2026-01-22.md
 ```
 
 ### Sample Output
