@@ -3,14 +3,14 @@ import Foundation
 /// Posts generated diaries to Slack via `chat.postMessage`.
 ///
 /// - Requires a bot token (`xoxb-...`); user tokens are not supported.
-/// - Sends the diary as plain markdown text with link/media unfurling disabled.
-/// - Truncates messages to ~39,000 UTF-8 bytes (Slack's hard limit is 40,000).
+/// - Renders the diary as Block Kit blocks (header + sections + context) so
+///   Slack's mrkdwn limitations don't expose raw `#` and `**` characters.
+/// - `text` is set to a short notification fallback ("{date} — CCDiary").
 actor SlackService {
     private let postMessageURL = URL(string: "https://slack.com/api/chat.postMessage")!
 
     func postDiary(_ entry: DiaryEntry, channel: String, botToken: String) async throws -> SlackPostResult {
-        let trimmed = entry.markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-        let (text, truncated) = Self.truncateForSlack(trimmed)
+        let message = SlackMessageBuilder.build(from: entry)
 
         var request = URLRequest(url: postMessageURL)
         request.httpMethod = "POST"
@@ -20,7 +20,8 @@ actor SlackService {
 
         let body: [String: Any] = [
             "channel": channel,
-            "text": text,
+            "text": message.fallbackText,
+            "blocks": message.blocks,
             "unfurl_links": false,
             "unfurl_media": false
         ]
@@ -55,28 +56,7 @@ actor SlackService {
             throw SlackServiceError.invalidResponseFormat
         }
 
-        return SlackPostResult(channel: postedChannel, timestamp: timestamp, truncated: truncated)
-    }
-
-    // Slack's `text` limit is 40,000 UTF-8 bytes. We truncate at 39,000 bytes to leave room
-    // for the suffix and avoid edge cases. `String.count` counts grapheme clusters and is
-    // unreliable for Japanese/emoji content, which can be ~3 bytes per character.
-    static func truncateForSlack(_ markdown: String) -> (text: String, truncated: Bool) {
-        let maxBytes = 39_000
-        let suffix = "\n\n...(truncated)"
-        let utf8 = markdown.utf8
-        guard utf8.count > maxBytes else {
-            return (markdown, false)
-        }
-
-        let budget = maxBytes - suffix.utf8.count
-        var bytes = Array(utf8.prefix(budget))
-        // Drop trailing UTF-8 continuation bytes (10xxxxxx) so we land on a code-point boundary.
-        while let last = bytes.last, (last & 0b1100_0000) == 0b1000_0000 {
-            bytes.removeLast()
-        }
-        let prefix = String(bytes: bytes, encoding: .utf8) ?? markdown
-        return (prefix + suffix, true)
+        return SlackPostResult(channel: postedChannel, timestamp: timestamp, truncated: message.truncated)
     }
 }
 

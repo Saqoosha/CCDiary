@@ -198,4 +198,4 @@ scripts/uninstall-daily-launch-agent.sh
 - `defaultSlackChannel` in [main.swift](Tools/CCDiaryCLI/main.swift) is a personal default. Forks should change it or rely on `--slack-channel` / `CCDIARY_SLACK_CHANNEL`.
 - `--skip-existing` skips the Slack post too when a diary already exists for that date.
 - `--force` and `--skip-existing` are mutually exclusive (rejected at parse time).
-- Diaries longer than ~39,000 UTF-8 bytes are truncated with `...(truncated)` appended; the CLI prints a warning to stderr when this happens.
+- Diaries are posted as Block Kit (header + section + context blocks) so Slack mrkdwn renders them cleanly. Sections beyond Slack's 50-block ceiling are dropped and a `:warning: Truncated to fit Slack limits.` context block is appended; the CLI also prints a warning to stderr.
