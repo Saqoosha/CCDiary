@@ -107,6 +107,7 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
   - `GeminiAPIService` - Generates diaries via Gemini API
   - `OpenAIAPIService` - Generates diaries via OpenAI API
   - `SlackService` - Posts generated diaries to Slack
+  - `CloudIngestService` - Pushes diaries (with stats) to the Cloudflare Worker at [`web/`](web/)
 
 ## Performance Optimizations
 
@@ -199,3 +200,16 @@ scripts/uninstall-daily-launch-agent.sh
 - `--skip-existing` skips the Slack post too when a diary already exists for that date.
 - `--force` and `--skip-existing` are mutually exclusive (rejected at parse time).
 - Diaries are posted as Block Kit (header + section + context blocks) so Slack mrkdwn renders them cleanly. Sections beyond Slack's 50-block ceiling are dropped and a `:warning: Truncated to fit Slack limits.` context block is appended; the CLI also prints a warning to stderr.
+
+## Cloud Archive (`web/`)
+
+The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated diary into D1 and presents a calendar + stats heatmap at `https://ccdiary.saqoo.sh`. Cloudflare Access (Google IdP) gates the human-facing routes; `POST /api/diaries` is bypassed by Access and protected by a bearer token instead.
+
+- Endpoint storage (priority): `--cloud-endpoint URL` → `CCDIARY_CLOUD_ENDPOINT` env → Keychain `sh.saqoo.CCDiary.cloud-endpoint`
+- Token storage (priority): `CCDIARY_CLOUD_TOKEN` env → Keychain `sh.saqoo.CCDiary.cloud-token`
+- D1 schema lives at [web/schema.sql](web/schema.sql). Re-run with `bun run db:apply:remote` after schema changes (CREATEs are idempotent; FTS triggers are dropped + recreated).
+- Stats payload is derived from `DayStatistics` in [CloudIngestService.swift](Sources/CCDiary/Services/CloudIngestService.swift): sessions, messages, project_count, active_minutes, peak_hour, top_project, plus per-source (`claudeCode` / `cursor` / `codex`) breakdown and full `ProjectSummary[]`.
+- `--post-cloud` flag mirrors `--post-slack`: same skip rules under `--skip-existing`, same Keychain pattern. `--cloud-endpoint URL` implies `--post-cloud`.
+- Backfill historical diaries with `ccdiary-cli sync-cloud [--from YYYY-MM-DD] [--to YYYY-MM-DD]`. Pulls `DayStatistics` from `StatisticsCache` when available.
+- Local dev: `cd web && bun install && bun run db:apply:local && bun run dev` (server at `localhost:4321`). Use `dev-local-token` from `.dev.vars.example` for local POSTs.
+- Full deploy runbook: [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).

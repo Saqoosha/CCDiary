@@ -2,14 +2,31 @@ import Foundation
 
 enum CCDiaryCLI {
     static func main() async {
+        let args = Array(CommandLine.arguments.dropFirst())
+        let subcommand = args.first
+        let helpForSubcommand: String = {
+            switch subcommand {
+            case "sync-cloud": return SyncCloudOptions.help
+            default:           return CLIOptions.help
+            }
+        }()
+
         do {
-            let options = try CLIOptions.parse(Array(CommandLine.arguments.dropFirst()))
-            try await run(options)
+            switch subcommand {
+            case "generate":
+                let options = try CLIOptions.parse(args)
+                try await runGenerate(options)
+            case "sync-cloud":
+                let options = try SyncCloudOptions.parse(args)
+                try await runSyncCloud(options)
+            default:
+                throw CLIError.helpRequested
+            }
         } catch CLIError.helpRequested {
-            print(CLIOptions.help)
+            print(helpForSubcommand)
         } catch let error as CLIError {
             // Argument errors: show help to guide the caller.
-            fputs("Error: \(error.localizedDescription)\n\n\(CLIOptions.help)\n", stderr)
+            fputs("Error: \(error.localizedDescription)\n\n\(helpForSubcommand)\n", stderr)
             Foundation.exit(1)
         } catch {
             // Runtime errors (network, Slack API, etc.): help text would be noise in launchd logs.
@@ -18,11 +35,14 @@ enum CCDiaryCLI {
         }
     }
 
-    private static func run(_ options: CLIOptions) async throws {
+    private static func runGenerate(_ options: CLIOptions) async throws {
         let aggregator = AggregatorService()
         let aggregateOptions = AggregateOptions(
             maxContentLength: options.maxContentLength,
-            maxMessagesPerProject: options.maxMessagesPerProject
+            maxMessagesPerProject: options.maxMessagesPerProject,
+            excludeCursor: options.excludeCursor,
+            perSourceTimeoutSeconds: options.perSourceTimeoutSeconds,
+            excludeProjectSubstrings: options.excludeProjectSubstrings
         )
 
         if options.buildIndex {
@@ -46,8 +66,12 @@ enum CCDiaryCLI {
         let storage = options.outputDirectory.map { DiaryStorage(directory: $0) } ?? DiaryStorage()
         if await storage.exists(dateString: activity.isoDateString), !options.force {
             if options.skipExisting {
-                let slackNote = options.postSlack ? " (Slack post also skipped)" : ""
-                print("Diary already exists for \(activity.isoDateString). Skipping.\(slackNote)")
+                let extras = [
+                    options.postSlack ? "Slack" : nil,
+                    options.postCloud ? "Cloud" : nil,
+                ].compactMap { $0 }
+                let note = extras.isEmpty ? "" : " (\(extras.joined(separator: " + ")) post also skipped)"
+                print("Diary already exists for \(activity.isoDateString). Skipping.\(note)")
                 return
             }
             throw CLIError.diaryAlreadyExists(activity.isoDateString)
@@ -66,6 +90,19 @@ enum CCDiaryCLI {
                 fputs("Warning: diary exceeded Slack's 50-block message limit; trailing sections were dropped.\n", stderr)
             }
         }
+
+        if options.postCloud {
+            let stats = try? await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+            let result = try await postToCloud(
+                entry: entry,
+                stats: stats,
+                provider: options.provider,
+                model: options.model ?? defaultModel(for: options.provider),
+                options: options
+            )
+            let action = result.inserted ? "inserted" : "updated"
+            print("Posted to cloud (\(action)) at \(result.date)")
+        }
     }
 
     private static func generateDiary(activity: DailyActivity, options: CLIOptions) async throws -> DiaryContent {
@@ -76,24 +113,25 @@ enum CCDiaryCLI {
         }
 
         let service: any AIAPIService
-        let defaultModel: String
         switch provider {
-        case .claudeAPI:
-            service = ClaudeAPIService()
-            defaultModel = "claude-haiku-4-5-20251101"
-        case .gemini:
-            service = GeminiAPIService()
-            defaultModel = "gemini-2.5-flash"
-        case .openai:
-            service = OpenAIAPIService()
-            defaultModel = "gpt-5-mini"
+        case .claudeAPI: service = ClaudeAPIService()
+        case .gemini:    service = GeminiAPIService()
+        case .openai:    service = OpenAIAPIService()
         }
 
         return try await service.generateDiary(
             activity: activity,
             apiKey: apiKey,
-            model: options.model ?? defaultModel
+            model: options.model ?? defaultModel(for: provider)
         )
+    }
+
+    static func defaultModel(for provider: AIProvider) -> String {
+        switch provider {
+        case .claudeAPI: return "claude-haiku-4-5-20251101"
+        case .gemini:    return "gemini-2.5-flash"
+        case .openai:    return "gpt-5-mini"
+        }
     }
 
     private static func resolveAPIKey(for provider: AIProvider) -> String? {
@@ -123,6 +161,46 @@ enum CCDiaryCLI {
 
         let service = SlackService()
         return try await service.postDiary(entry, channel: channel, botToken: botToken)
+    }
+
+    private static func postToCloud(
+        entry: DiaryEntry,
+        stats: DayStatistics?,
+        provider: AIProvider,
+        model: String,
+        options: CLIOptions
+    ) async throws -> CloudIngestResult {
+        let token = ProcessInfo.processInfo.environment["CCDIARY_CLOUD_TOKEN"]
+            ?? KeychainHelper.load(service: KeychainHelper.cloudTokenService)
+        guard let token, !token.isEmpty else {
+            throw CloudIngestError.missingToken
+        }
+
+        guard let endpoint = configuredCloudEndpoint(options: options) else {
+            throw CloudIngestError.missingEndpoint
+        }
+
+        let service = CloudIngestService()
+        return try await service.upload(
+            entry,
+            stats: stats,
+            provider: provider,
+            model: model,
+            endpoint: endpoint,
+            token: token
+        )
+    }
+
+    private static func configuredCloudEndpoint(options: CLIOptions) -> URL? {
+        let raw = [
+            options.cloudEndpoint,
+            ProcessInfo.processInfo.environment["CCDIARY_CLOUD_ENDPOINT"],
+            KeychainHelper.load(service: KeychainHelper.cloudEndpointService)
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+        guard let raw, let url = URL(string: raw), url.scheme != nil else { return nil }
+        return url
     }
 
     private static func configuredSlackChannel(options: CLIOptions) -> String? {
@@ -173,8 +251,17 @@ private struct CLIOptions {
     var buildIndex: Bool
     var postSlack: Bool
     var slackChannel: String?
+    var postCloud: Bool
+    var cloudEndpoint: String?
+    var excludeCursor: Bool
+    var perSourceTimeoutSeconds: Double
+    var excludeProjectSubstrings: [String]
 
     static let defaultSlackChannel = "C033F6U7147"
+    /// Always-on default exclusions. Auto-instrumented projects whose JSONL
+    /// files balloon and stall the aggregator. Override or extend at the CLI
+    /// with --exclude-project <name>; pass --no-default-exclude to clear.
+    static let defaultExcludeSubstrings: [String] = ["observer-sessions", "claude-mem"]
 
     static let help = """
     Usage:
@@ -182,11 +269,19 @@ private struct CLIOptions {
                            [--provider claude|gemini|openai] [--model MODEL] [--output-dir PATH]
                            [--max-content-length N] [--max-messages-per-project N] [--build-index]
                            [--post-slack] [--slack-channel CHANNEL_ID]
+                           [--post-cloud] [--cloud-endpoint URL]
+                           [--no-cursor] [--source-timeout SECONDS]
+                           [--exclude-project NAME] [--no-default-exclude]
 
     Notes:
       --force and --skip-existing are mutually exclusive (rejected at parse time).
-      --skip-existing also skips Slack posting when the diary already exists.
-      Passing --slack-channel implies --post-slack.
+      --skip-existing also skips Slack and Cloud posting when the diary already exists.
+      Passing --slack-channel implies --post-slack. Passing --cloud-endpoint implies --post-cloud.
+      --no-cursor skips the Cursor reader (useful when state.vscdb has grown
+        pathologically large; --source-timeout 60 also keeps it bounded).
+      --exclude-project NAME drops projects whose path/name contains NAME.
+        Repeat for multiple names. Always-on defaults: \(defaultExcludeSubstrings.joined(separator: ", ")).
+        Pass --no-default-exclude to disable the always-on list.
 
     Environment:
       ANTHROPIC_API_KEY        Used for --provider claude before Keychain fallback
@@ -197,6 +292,9 @@ private struct CLIOptions {
       CCDIARY_SLACK_CHANNEL    Slack channel; takes precedence over SLACK_CHANNEL_ID
       SLACK_CHANNEL_ID         Slack channel; falls back to default (\(defaultSlackChannel))
                                --slack-channel beats both env vars and the default.
+      CCDIARY_CLOUD_TOKEN      Bearer token for --post-cloud before Keychain fallback
+      CCDIARY_CLOUD_ENDPOINT   Base URL for the cloud archive (e.g. https://ccdiary.saqoo.sh)
+                               --cloud-endpoint beats env var and Keychain.
     """
 
     static func parse(_ arguments: [String]) throws -> CLIOptions {
@@ -216,6 +314,12 @@ private struct CLIOptions {
         var buildIndex = false
         var postSlack = false
         var slackChannel: String?
+        var postCloud = false
+        var cloudEndpoint: String?
+        var excludeCursor = false
+        var perSourceTimeoutSeconds: Double = 0
+        var excludeProjectSubstrings: [String] = []
+        var disableDefaultExclude = false
 
         var index = 1
         while index < arguments.count {
@@ -281,6 +385,31 @@ private struct CLIOptions {
                 }
                 slackChannel = arguments[index]
                 postSlack = true
+            case "--post-cloud":
+                postCloud = true
+            case "--cloud-endpoint":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--cloud-endpoint requires a URL")
+                }
+                cloudEndpoint = arguments[index]
+                postCloud = true
+            case "--no-cursor":
+                excludeCursor = true
+            case "--source-timeout":
+                index += 1
+                guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
+                    throw CLIError.invalidArgument("--source-timeout requires a non-negative number of seconds")
+                }
+                perSourceTimeoutSeconds = value
+            case "--exclude-project":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--exclude-project requires a project name or path substring")
+                }
+                excludeProjectSubstrings.append(arguments[index])
+            case "--no-default-exclude":
+                disableDefaultExclude = true
             default:
                 throw CLIError.invalidArgument("Unknown argument: \(arg)")
             }
@@ -289,6 +418,12 @@ private struct CLIOptions {
 
         if force && skipExisting {
             throw CLIError.invalidArgument("--force and --skip-existing are mutually exclusive")
+        }
+
+        if !disableDefaultExclude {
+            for sub in defaultExcludeSubstrings where !excludeProjectSubstrings.contains(sub) {
+                excludeProjectSubstrings.append(sub)
+            }
         }
 
         return CLIOptions(
@@ -303,7 +438,12 @@ private struct CLIOptions {
             maxMessagesPerProject: maxMessagesPerProject,
             buildIndex: buildIndex,
             postSlack: postSlack,
-            slackChannel: slackChannel
+            slackChannel: slackChannel,
+            postCloud: postCloud,
+            cloudEndpoint: cloudEndpoint,
+            excludeCursor: excludeCursor,
+            perSourceTimeoutSeconds: perSourceTimeoutSeconds,
+            excludeProjectSubstrings: excludeProjectSubstrings
         )
     }
 
@@ -323,7 +463,7 @@ private struct CLIOptions {
     // The CLI and the GUI app live under different bundle IDs
     // (`sh.saqoo.ccdiary-cli` vs `sh.saqoo.CCDiary`), so `UserDefaults.standard`
     // can't see the GUI's `aiProvider`. Use `CCDIARY_PROVIDER` to override.
-    private static func defaultProvider() -> AIProvider {
+    static func defaultProvider() -> AIProvider {
         if let envProvider = ProcessInfo.processInfo.environment["CCDIARY_PROVIDER"],
            let provider = try? parseProvider(envProvider) {
             return provider
@@ -333,6 +473,230 @@ private struct CLIOptions {
 
     private static func yesterday() -> Date {
         Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+    }
+}
+
+extension CCDiaryCLI {
+    /// Bulk-upload every existing local diary file to the cloud archive.
+    /// Pulls stats from `StatisticsCache` when available and falls back to a
+    /// stats-less upload (server keeps existing values) when no cache exists.
+    static func runSyncCloud(_ options: SyncCloudOptions) async throws {
+        let token = ProcessInfo.processInfo.environment["CCDIARY_CLOUD_TOKEN"]
+            ?? KeychainHelper.load(service: KeychainHelper.cloudTokenService)
+        guard let token, !token.isEmpty else { throw CloudIngestError.missingToken }
+
+        guard let endpoint = SyncCloudOptions.resolveEndpoint(options.cloudEndpoint) else {
+            throw CloudIngestError.missingEndpoint
+        }
+
+        let storage = options.outputDirectory.map { DiaryStorage(directory: $0) } ?? DiaryStorage()
+        let entries = try await storage.loadAll()
+        let cache = StatisticsCache()
+        let service = CloudIngestService()
+        let aggregator = options.computeStats ? AggregatorService() : nil
+
+        let filtered = entries.filter { entry in
+            if let from = options.from, entry.dateString < from { return false }
+            if let to = options.to, entry.dateString > to { return false }
+            return true
+        }
+
+        if filtered.isEmpty {
+            print("No diaries to sync.")
+            return
+        }
+
+        let mode = options.computeStats ? " (computing stats)" : ""
+        print("Syncing \(filtered.count) diaries to \(endpoint.absoluteString)\(mode)...")
+
+        var ok = 0
+        var failed = 0
+        for entry in filtered {
+            // Prefer cached stats; fall back to live aggregation when --compute-stats is set
+            // and no cache exists (e.g. historical diaries created before stats were tracked).
+            var stats = await cache.get(for: entry.dateString)
+            if stats == nil, let aggregator,
+               let date = DateFormatting.iso.date(from: entry.dateString) {
+                let aggregateOptions = AggregateOptions(
+                    excludeCursor: options.excludeCursor,
+                    perSourceTimeoutSeconds: options.perSourceTimeoutSeconds,
+                    excludeProjectSubstrings: options.excludeProjectSubstrings
+                )
+                stats = try? await aggregator.getQuickStatistics(for: date, options: aggregateOptions)
+            }
+            do {
+                let result = try await service.upload(
+                    entry,
+                    stats: stats,
+                    provider: options.provider,
+                    model: defaultModel(for: options.provider),
+                    endpoint: endpoint,
+                    token: token
+                )
+                let action = result.inserted ? "inserted" : "updated"
+                let statsTag = stats == nil ? " (no stats)" : " (\(stats!.sessionCount)s/\(stats!.messageCount)m)"
+                print("  \(entry.dateString) → \(action)\(statsTag)")
+                ok += 1
+            } catch {
+                fputs("  \(entry.dateString) → FAILED: \(error.localizedDescription)\n", stderr)
+                failed += 1
+                if options.failFast { throw error }
+            }
+        }
+
+        print("Done. \(ok) succeeded, \(failed) failed.")
+        if failed > 0 { Foundation.exit(2) }
+    }
+}
+
+struct SyncCloudOptions {
+    var from: String?
+    var to: String?
+    var cloudEndpoint: String?
+    var outputDirectory: URL?
+    var provider: AIProvider
+    var failFast: Bool
+    var computeStats: Bool
+    var excludeCursor: Bool
+    var perSourceTimeoutSeconds: Double
+    var excludeProjectSubstrings: [String]
+
+    static let help = """
+    Usage:
+      ccdiary-cli sync-cloud [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+                             [--cloud-endpoint URL] [--output-dir PATH]
+                             [--provider claude|gemini|openai] [--fail-fast]
+                             [--compute-stats] [--no-cursor] [--source-timeout SECONDS]
+                             [--exclude-project NAME] [--no-default-exclude]
+
+    Pushes every existing local diary (.md under the diaries directory) to the
+    cloud archive. Uses the StatisticsCache when present so historical entries
+    backfill with full stats; falls back to a stats-less upload otherwise.
+
+    --compute-stats forces a fresh aggregation pass on every diary that doesn't
+    have a cached DayStatistics, which is what populates the heatmap when you
+    backfill historical diaries (slow: ~1–2s per date).
+
+    Environment:
+      CCDIARY_CLOUD_TOKEN      Bearer token (Keychain fallback: \(KeychainHelper.cloudTokenService))
+      CCDIARY_CLOUD_ENDPOINT   Base URL (Keychain fallback: \(KeychainHelper.cloudEndpointService))
+    """
+
+    static func parse(_ arguments: [String]) throws -> SyncCloudOptions {
+        guard let command = arguments.first, command == "sync-cloud" else {
+            throw CLIError.helpRequested
+        }
+
+        var from: String?
+        var to: String?
+        var endpoint: String?
+        var outputDirectory: URL?
+        // Honor CCDIARY_PROVIDER like the `generate` subcommand. The provider
+        // is recorded in D1 to drive the "favorite_provider" stat — nothing
+        // else relies on it.
+        var provider: AIProvider = CLIOptions.defaultProvider()
+        var failFast = false
+        var computeStats = false
+        var excludeCursor = false
+        var perSourceTimeoutSeconds: Double = 0
+        var excludeProjectSubstrings: [String] = []
+        var disableDefaultExclude = false
+
+        var index = 1
+        while index < arguments.count {
+            let arg = arguments[index]
+            switch arg {
+            case "--help", "-h":
+                throw CLIError.helpRequested
+            case "--from":
+                index += 1
+                guard index < arguments.count,
+                      DateFormatting.iso.date(from: arguments[index]) != nil else {
+                    throw CLIError.invalidArgument("--from requires YYYY-MM-DD")
+                }
+                from = arguments[index]
+            case "--to":
+                index += 1
+                guard index < arguments.count,
+                      DateFormatting.iso.date(from: arguments[index]) != nil else {
+                    throw CLIError.invalidArgument("--to requires YYYY-MM-DD")
+                }
+                to = arguments[index]
+            case "--cloud-endpoint":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--cloud-endpoint requires a URL")
+                }
+                endpoint = arguments[index]
+            case "--output-dir":
+                index += 1
+                guard index < arguments.count else { throw CLIError.invalidArgument("--output-dir requires a path") }
+                outputDirectory = URL(fileURLWithPath: arguments[index]).standardizedFileURL
+            case "--provider":
+                index += 1
+                guard index < arguments.count else { throw CLIError.invalidArgument("--provider requires claude/gemini/openai") }
+                switch arguments[index].lowercased() {
+                case "claude", "claude-api", "anthropic": provider = .claudeAPI
+                case "gemini", "google":                  provider = .gemini
+                case "openai", "gpt":                     provider = .openai
+                default: throw CLIError.invalidArgument("--provider requires claude, gemini, or openai")
+                }
+            case "--fail-fast":
+                failFast = true
+            case "--compute-stats":
+                computeStats = true
+            case "--no-cursor":
+                excludeCursor = true
+            case "--source-timeout":
+                index += 1
+                guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
+                    throw CLIError.invalidArgument("--source-timeout requires a non-negative number of seconds")
+                }
+                perSourceTimeoutSeconds = value
+            case "--exclude-project":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--exclude-project requires a project name or path substring")
+                }
+                excludeProjectSubstrings.append(arguments[index])
+            case "--no-default-exclude":
+                disableDefaultExclude = true
+            default:
+                throw CLIError.invalidArgument("Unknown argument: \(arg)")
+            }
+            index += 1
+        }
+
+        if !disableDefaultExclude {
+            for sub in CLIOptions.defaultExcludeSubstrings where !excludeProjectSubstrings.contains(sub) {
+                excludeProjectSubstrings.append(sub)
+            }
+        }
+
+        return SyncCloudOptions(
+            from: from,
+            to: to,
+            cloudEndpoint: endpoint,
+            outputDirectory: outputDirectory,
+            provider: provider,
+            failFast: failFast,
+            computeStats: computeStats,
+            excludeCursor: excludeCursor,
+            perSourceTimeoutSeconds: perSourceTimeoutSeconds,
+            excludeProjectSubstrings: excludeProjectSubstrings
+        )
+    }
+
+    static func resolveEndpoint(_ explicit: String?) -> URL? {
+        let raw = [
+            explicit,
+            ProcessInfo.processInfo.environment["CCDIARY_CLOUD_ENDPOINT"],
+            KeychainHelper.load(service: KeychainHelper.cloudEndpointService)
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+        guard let raw, let url = URL(string: raw), url.scheme != nil else { return nil }
+        return url
     }
 }
 

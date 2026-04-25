@@ -18,6 +18,7 @@ English | [日本語](README.ja.md)
 - **Multi-Provider Support** - Choose between Claude API, Gemini API, and OpenAI API
 - **Large File Handling** - Efficiently processes 87MB+ log files with binary search optimization
 - **Markdown Output** - Saves and displays diaries in Markdown format
+- **Cloud Archive (optional)** - Mirror generated diaries to a private Cloudflare Workers + D1 site with a calendar view and GitHub-style activity heatmap; see [`web/`](web/) and the [deployment doc](docs/WEB_DEPLOYMENT.md)
 
 ## Installation
 

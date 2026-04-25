@@ -1,0 +1,17 @@
+# Build output
+dist/
+.astro/
+.wrangler/
+node_modules/
+
+# Cloudflare local D1
+.wrangler/state/
+
+# Local env (for dev: bearer token, etc.)
+.dev.vars
+.env
+.env.local
+
+# Editor
+.DS_Store
+*.log

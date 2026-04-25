@@ -7,10 +7,23 @@ private let logger = Logger(subsystem: "CCDiary", category: "CursorService")
 // SQLITE_TRANSIENT tells SQLite to copy the string immediately
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// Cache for Cursor dates with actual messages
-private actor CursorDateCache {
-    private var dates: Set<String> = []
+/// Persistent date → bubbleKey index for Cursor's globalStorage SQLite.
+///
+/// Cursor stores every chat bubble under `cursorDiskKV` with a key like
+/// `bubbleId:<composerId>:<bubbleId>` and the JSON payload (incl. `createdAt`)
+/// in the value blob. There's no SQL-side date index, so naive per-day scans
+/// re-parse every blob on every call — pathological once `state.vscdb` grows
+/// past a few hundred MB.
+///
+/// This actor caches `date → [bubbleKey]` to disk so subsequent date queries
+/// turn into a single `WHERE key IN (...)` query. Invalidated by DB mtime.
+private actor CursorBubbleIndex {
+    private var byDate: [String: [String]] = [:]
     private var isLoaded = false
+    /// True once `setIndex` has run for the current `lastDBModTime`. Lets us
+    /// distinguish "no Cursor activity ever" (zero bubbles, no rebuild needed)
+    /// from "cache empty because we haven't built yet" (rebuild required).
+    private var hasBuilt = false
     private var lastDBModTime: TimeInterval = 0
 
     private static var cacheFileURL: URL {
@@ -25,28 +38,47 @@ private actor CursorDateCache {
 
         let cacheDir = cachesDir.appendingPathComponent("CCDiary")
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        return cacheDir.appendingPathComponent("cursor_dates.json")
+        return cacheDir.appendingPathComponent("cursor_bubble_index_v1.json")
+    }
+
+    /// Old v0 cache file. Removed on first load if present.
+    private static var legacyCacheFileURL: URL {
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return cachesDir.appendingPathComponent("CCDiary/cursor_dates.json")
     }
 
     func getDates() -> Set<String> {
-        return dates
+        ensureLoaded()
+        return Set(byDate.keys)
     }
 
-    func setDates(_ newDates: Set<String>, dbModTime: TimeInterval) {
-        dates = newDates
+    func getKeys(for date: String) -> [String]? {
+        ensureLoaded()
+        return byDate[date]
+    }
+
+    func setIndex(_ newIndex: [String: [String]], dbModTime: TimeInterval) {
+        byDate = newIndex
         lastDBModTime = dbModTime
+        isLoaded = true
+        hasBuilt = true
         saveToDisk()
     }
 
     func needsRebuild(currentDBModTime: TimeInterval) -> Bool {
         ensureLoaded()
-        return currentDBModTime != lastDBModTime
+        if currentDBModTime != lastDBModTime { return true }
+        // mtime matches and we already built once for this DB — even an empty
+        // index is "definitively empty" (no Cursor activity), so don't rescan.
+        return !hasBuilt
     }
 
     private func ensureLoaded() {
         guard !isLoaded else { return }
         loadFromDisk()
         isLoaded = true
+        // Drop the v0 file if it's still around — the v1 cache supersedes it.
+        try? FileManager.default.removeItem(at: Self.legacyCacheFileURL)
     }
 
     private func loadFromDisk() {
@@ -55,28 +87,37 @@ private actor CursorDateCache {
 
         do {
             let data = try Data(contentsOf: url)
-            let stored = try JSONDecoder().decode(StoredCursorDateCache.self, from: data)
-            dates = Set(stored.dates)
+            let stored = try JSONDecoder().decode(StoredCursorBubbleIndex.self, from: data)
+            byDate = stored.byDate
             lastDBModTime = stored.dbModTime
-            logger.info("Loaded Cursor date cache: \(self.dates.count) dates")
-        } catch {
-            logger.warning("Cursor date cache corrupted, deleting: \(error)")
+            hasBuilt = true
+            let bubbleCount = byDate.values.reduce(0) { $0 + $1.count }
+            // logger.notice (not .info) — index load status should survive
+            // log rotation so post-hoc debugging can confirm cache was used.
+            logger.notice("Loaded Cursor bubble index: \(self.byDate.count) dates, \(bubbleCount) bubbles")
+        } catch is DecodingError {
+            // Schema drift or genuinely corrupt JSON — safe to drop.
+            logger.warning("Cursor bubble index incompatible/corrupt, rebuilding")
             try? FileManager.default.removeItem(at: url)
+        } catch {
+            // Transient I/O failure — keep the file, leave the in-memory state
+            // empty so the next call rebuilds from the DB.
+            logger.warning("Cursor bubble index read failed (will rebuild from DB): \(error.localizedDescription)")
         }
     }
 
     private func saveToDisk() {
-        let stored = StoredCursorDateCache(dates: Array(dates), dbModTime: lastDBModTime)
+        let stored = StoredCursorBubbleIndex(byDate: byDate, dbModTime: lastDBModTime)
         do {
             let data = try JSONEncoder().encode(stored)
             try data.write(to: Self.cacheFileURL)
         } catch {
-            logger.error("Failed to save Cursor date cache: \(error)")
+            logger.error("Failed to save Cursor bubble index: \(error)")
         }
     }
 
-    private struct StoredCursorDateCache: Codable {
-        let dates: [String]
+    private struct StoredCursorBubbleIndex: Codable {
+        let byDate: [String: [String]]
         let dbModTime: TimeInterval
     }
 }
@@ -86,7 +127,7 @@ actor CursorService {
     private let globalDBPath: String
     private let workspaceStoragePath: String
     private var globalDB: OpaquePointer?
-    private let dateCache = CursorDateCache()
+    private let bubbleIndex = CursorBubbleIndex()
 
     /// Default Cursor paths
     static var defaultGlobalDBPath: String {
@@ -224,7 +265,7 @@ actor CursorService {
             return []
         }
         // Return cached dates - buildDateIndexIfNeeded() should be called at startup
-        return await dateCache.getDates()
+        return await bubbleIndex.getDates()
     }
 
     /// Build date index if needed (call at app startup)
@@ -235,16 +276,32 @@ actor CursorService {
 
         // Check if cache needs rebuild
         let dbModTime = getDBModTime()
-        if await !dateCache.needsRebuild(currentDBModTime: dbModTime) {
-            logger.notice("Cursor date index up-to-date")
-            return await dateCache.getDates()
+        if await !bubbleIndex.needsRebuild(currentDBModTime: dbModTime) {
+            logger.notice("Cursor bubble index up-to-date")
+            return await bubbleIndex.getDates()
         }
 
         // Rebuild cache from database
-        let dates = try await buildDateIndex()
-        await dateCache.setDates(dates, dbModTime: dbModTime)
+        try await rebuildBubbleIndex(dbModTime: dbModTime)
+        return await bubbleIndex.getDates()
+    }
 
-        return dates
+    /// Build the bubble index by scanning all `bubbleId:%` rows once. Reuses
+    /// the byte-pattern matcher from `getAllMessageDates` so we extract date
+    /// AND key in a single pass — no JSON parse per row.
+    private func rebuildBubbleIndex(dbModTime: TimeInterval) async throws {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        try openGlobalDB()
+
+        let workspaces = getAllWorkspaces()
+        logger.notice("rebuildBubbleIndex: \(workspaces.count) workspaces found")
+
+        let byDate = try collectBubbleKeysByDate()
+        await bubbleIndex.setIndex(byDate, dbModTime: dbModTime)
+
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let bubbleCount = byDate.values.reduce(0) { $0 + $1.count }
+        logger.notice("Built Cursor bubble index: \(byDate.count) dates, \(bubbleCount) bubbles in \(elapsed, format: .fixed(precision: 1))ms")
     }
 
     /// Get database modification time
@@ -256,48 +313,18 @@ actor CursorService {
         return modDate.timeIntervalSince1970
     }
 
-    /// Build date index from workspace composers (same logic as getActivityForDate)
-    private func buildDateIndex() async throws -> Set<String> {
-        let startTime = CFAbsoluteTimeGetCurrent()
-
-        try openGlobalDB()
-
-        let workspaces = getAllWorkspaces()
-        logger.notice("buildDateIndex: \(workspaces.count) workspaces found")
-
-        // Step 1: Get all composers from all workspaces in parallel
-        var checkpoint = CFAbsoluteTimeGetCurrent()
-        let allComposers = await withTaskGroup(of: [String].self) { group in
-            for (_, _, dbPath) in workspaces {
-                group.addTask {
-                    let composers = self.getAllComposersFromWorkspace(dbPath: dbPath)
-                    return composers.map { $0.composerId }
-                }
-            }
-
-            var results: [String] = []
-            for await composerIds in group {
-                results.append(contentsOf: composerIds)
-            }
-            return results
-        }
-        logger.notice("  workspace scan: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms (\(allComposers.count) composers)")
-        checkpoint = CFAbsoluteTimeGetCurrent()
-
-        // Step 2: Get all message dates in a single query (much faster than per-composer queries)
-        let dates = try getAllMessageDates()
-        logger.notice("  message dates: \((CFAbsoluteTimeGetCurrent() - checkpoint) * 1000, format: .fixed(precision: 1))ms")
-
-        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        logger.notice("Built Cursor date index: \(dates.count) dates in \(elapsed, format: .fixed(precision: 1))ms")
-
-        return dates
-    }
-
-    /// Get all unique dates from ALL messages in globalDB (single efficient query)
-    /// Uses fast byte pattern matching instead of JSON parsing for ~10x speedup
-    private func getAllMessageDates() throws -> Set<String> {
-        let query = "SELECT value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+    /// Single-pass byte-pattern scan that builds a `date → [bubbleKey]` map.
+    /// Reads `key` and `value` together so we never have to revisit blobs.
+    /// JSON parsing is deferred to `parseBubbles(...)` — that runs only on the
+    /// small subset of bubbles for the queried date.
+    ///
+    /// Date keys are in **the user's local time zone**, matching how
+    /// `getGlobalMessagesByComposer(for:)` resolves the requested date via
+    /// `Calendar.current.startOfDay(for:)`. Naively prefixing the ISO
+    /// `createdAt` (which is always UTC `Z`) would split bubbles created
+    /// between 00:00 and the local UTC offset onto the wrong day.
+    private func collectBubbleKeysByDate() throws -> [String: [String]] {
+        let query = "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
         var stmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
@@ -306,38 +333,38 @@ actor CursorService {
         }
         defer { sqlite3_finalize(stmt) }
 
-        var dates: Set<String> = []
+        var byDate: [String: [String]] = [:]
 
-        // Byte patterns to search for
+        // Byte patterns for the fast pre-filter.
         let type1Pattern = Data("\"type\":1".utf8)
         let type2Pattern = Data("\"type\":2".utf8)
         let createdAtPattern = Data("\"createdAt\":\"".utf8)
         let emptyTextPattern = Data("\"text\":\"\"".utf8)
 
         while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let valuePtr = sqlite3_column_blob(stmt, 0) else { continue }
-            let valueLength = Int(sqlite3_column_bytes(stmt, 0))
+            guard let keyPtr = sqlite3_column_text(stmt, 0),
+                  let valuePtr = sqlite3_column_blob(stmt, 1) else { continue }
+            let valueLength = Int(sqlite3_column_bytes(stmt, 1))
             let data = Data(bytes: valuePtr, count: valueLength)
 
-            // Check type is 1 or 2
             guard data.range(of: type1Pattern) != nil || data.range(of: type2Pattern) != nil else { continue }
-
-            // Check text is not empty
             if data.range(of: emptyTextPattern) != nil { continue }
 
-            // Find createdAt and extract date (YYYY-MM-DD)
             guard let range = data.range(of: createdAtPattern) else { continue }
-            let dateOffset = range.upperBound
-            guard dateOffset + 10 <= data.count else { continue }
+            let valueStart = range.upperBound
+            // Locate the closing quote of the timestamp string. Cap at 32 bytes —
+            // ISO8601 with millis ("2026-04-25T11:11:58.123Z") fits in 24.
+            let scanEnd = min(valueStart + 32, data.count)
+            guard let quoteIndex = data[valueStart..<scanEnd].firstIndex(of: 0x22 /* " */) else { continue }
+            guard let timestampString = String(data: data[valueStart..<quoteIndex], encoding: .utf8),
+                  let timestamp = DateFormatting.parseISO8601(timestampString) else { continue }
 
-            // Extract YYYY-MM-DD (10 chars)
-            let dateData = data[dateOffset..<(dateOffset + 10)]
-            guard let dateString = String(data: dateData, encoding: .utf8) else { continue }
-
-            dates.insert(dateString)
+            let localDate = DateFormatting.iso.string(from: timestamp)
+            let key = String(cString: keyPtr)
+            byDate[localDate, default: []].append(key)
         }
 
-        return dates
+        return byDate
     }
 
     /// Get all composers from a workspace (without date filtering)
@@ -607,7 +634,7 @@ actor CursorService {
         let dateString = DateFormatting.iso.string(from: date)
 
         // Cursor 3.x stores Agent chats in global cursorDiskKV composerData/bubbleId keys.
-        let globalActivities = try getGlobalActivityForDate(date)
+        let globalActivities = try await getGlobalActivityForDate(date)
         if !globalActivities.isEmpty {
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             let totalMessages = globalActivities.reduce(0) { $0 + $1.messages.count }
@@ -675,10 +702,10 @@ actor CursorService {
     }
 
     /// Cursor 3.x globalStorage-backed activity reader.
-    private func getGlobalActivityForDate(_ date: Date) throws -> [CursorProjectActivity] {
+    private func getGlobalActivityForDate(_ date: Date) async throws -> [CursorProjectActivity] {
         try openGlobalDB()
 
-        let messagesByComposer = try getGlobalMessagesByComposer(for: date)
+        let messagesByComposer = try await getGlobalMessagesByComposer(for: date)
         guard !messagesByComposer.isEmpty else { return [] }
 
         let composers = try getGlobalComposers(only: Set(messagesByComposer.keys))
@@ -736,56 +763,87 @@ actor CursorService {
         .sorted { $0.timeRangeStart < $1.timeRangeStart }
     }
 
-    private func getGlobalMessagesByComposer(for date: Date) throws -> [String: GlobalCursorMessageBundle] {
+    private func getGlobalMessagesByComposer(for date: Date) async throws -> [String: GlobalCursorMessageBundle] {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
         guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
             throw CursorServiceError.invalidDate
         }
+        let dateString = DateFormatting.iso.string(from: date)
 
-        let query = "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
-        var stmt: OpaquePointer?
-
-        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
-            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
-            throw CursorServiceError.queryFailed(errorMsg)
+        // Make sure the persistent date → bubbleKeys index is current.
+        let dbModTime = getDBModTime()
+        if await bubbleIndex.needsRebuild(currentDBModTime: dbModTime) {
+            try await rebuildBubbleIndex(dbModTime: dbModTime)
         }
-        defer { sqlite3_finalize(stmt) }
 
+        guard let keys = await bubbleIndex.getKeys(for: dateString), !keys.isEmpty else {
+            return [:]
+        }
+
+        return try parseBubbles(keys: keys, startOfDay: startOfDay, endOfDay: endOfDay)
+    }
+
+    /// Fetches the given bubble keys via batched `WHERE key IN (...)` queries
+    /// and parses their JSON. Bounded by the cardinality of `keys`, not the DB.
+    private func parseBubbles(
+        keys: [String],
+        startOfDay: Date,
+        endOfDay: Date,
+        chunkSize: Int = 500
+    ) throws -> [String: GlobalCursorMessageBundle] {
         var bundles: [String: GlobalCursorMessageBundle] = [:]
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let keyPtr = sqlite3_column_text(stmt, 0),
-                  let valuePtr = sqlite3_column_blob(stmt, 1) else {
-                continue
+        var stmt: OpaquePointer?
+        defer { if stmt != nil { sqlite3_finalize(stmt) } }
+
+        for chunk in stride(from: 0, to: keys.count, by: chunkSize) {
+            let end = min(chunk + chunkSize, keys.count)
+            let slice = keys[chunk..<end]
+            let placeholders = Array(repeating: "?", count: slice.count).joined(separator: ",")
+            let query = "SELECT key, value FROM cursorDiskKV WHERE key IN (\(placeholders))"
+
+            if stmt != nil { sqlite3_finalize(stmt); stmt = nil }
+            guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+                let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+                throw CursorServiceError.queryFailed(errorMsg)
             }
 
-            let key = String(cString: keyPtr)
-            let keyParts = key.split(separator: ":", omittingEmptySubsequences: false)
-            guard keyParts.count >= 3 else { continue }
-            let composerId = String(keyParts[1])
-
-            let valueLength = sqlite3_column_bytes(stmt, 1)
-            let data = Data(bytes: valuePtr, count: Int(valueLength))
-
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let type = json["type"] as? Int,
-                  type == 1 || type == 2,
-                  let createdAtStr = json["createdAt"] as? String,
-                  let timestamp = isoFormatter.date(from: createdAtStr),
-                  timestamp >= startOfDay && timestamp < endOfDay,
-                  let text = json["text"] as? String,
-                  !text.isEmpty else {
-                continue
+            for (i, key) in slice.enumerated() {
+                sqlite3_bind_text(stmt, Int32(i + 1), key, -1, SQLITE_TRANSIENT)
             }
 
-            let role: MessageRole = type == 1 ? .user : .assistant
-            var bundle = bundles[composerId] ?? GlobalCursorMessageBundle(messages: [], paths: [])
-            bundle.messages.append(CursorChatMessage(role: role, content: text, timestamp: timestamp))
-            bundle.paths.formUnion(Self.collectFileSystemPaths(from: json))
-            bundles[composerId] = bundle
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let keyPtr = sqlite3_column_text(stmt, 0),
+                      let valuePtr = sqlite3_column_blob(stmt, 1) else { continue }
+
+                let key = String(cString: keyPtr)
+                let keyParts = key.split(separator: ":", omittingEmptySubsequences: false)
+                guard keyParts.count >= 3 else { continue }
+                let composerId = String(keyParts[1])
+
+                let valueLength = sqlite3_column_bytes(stmt, 1)
+                let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let type = json["type"] as? Int,
+                      type == 1 || type == 2,
+                      let createdAtStr = json["createdAt"] as? String,
+                      let timestamp = isoFormatter.date(from: createdAtStr),
+                      timestamp >= startOfDay && timestamp < endOfDay,
+                      let text = json["text"] as? String,
+                      !text.isEmpty else {
+                    continue
+                }
+
+                let role: MessageRole = type == 1 ? .user : .assistant
+                var bundle = bundles[composerId] ?? GlobalCursorMessageBundle(messages: [], paths: [])
+                bundle.messages.append(CursorChatMessage(role: role, content: text, timestamp: timestamp))
+                bundle.paths.formUnion(Self.collectFileSystemPaths(from: json))
+                bundles[composerId] = bundle
+            }
         }
 
         return bundles

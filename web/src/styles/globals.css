@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+/* Light mode only — no `.dark` block, no `@variant dark`. */
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /* Heatmap palette (5 levels of activity) */
+  --heat-0: oklch(0.96 0.005 250);
+  --heat-1: oklch(0.86 0.06 245);
+  --heat-2: oklch(0.78 0.10 245);
+  --heat-3: oklch(0.68 0.14 250);
+  --heat-4: oklch(0.55 0.17 255);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-heat-0: var(--heat-0);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: "opsz" 32;
+  }
+
+  /* Markdown body — used inside Card on /[date] */
+  .prose :where(h1, h2, h3, h4) {
+    @apply font-semibold tracking-tight;
+  }
+  .prose h1 {
+    @apply text-2xl mt-0 mb-6;
+  }
+  .prose h2 {
+    @apply text-lg mt-8 mb-3;
+  }
+  .prose h3 {
+    @apply text-base mt-6 mb-2;
+  }
+  .prose ul {
+    @apply my-3 pl-5;
+  }
+  .prose li {
+    @apply my-1;
+  }
+  .prose p {
+    @apply my-3 leading-relaxed;
+  }
+  .prose hr {
+    @apply my-8;
+  }
+  .prose code {
+    @apply rounded bg-muted px-1.5 py-0.5 text-[0.875em] font-mono;
+  }
+  /* @tailwindcss/typography wraps inline code in `before/after` backtick
+     pseudo-elements — strip them so we don't get `like this` rendered
+     literally on the page. */
+  .prose code::before,
+  .prose code::after {
+    content: none !important;
+  }
+  .prose pre {
+    @apply rounded-lg border bg-muted/50 p-4 overflow-x-auto;
+  }
+  .prose pre code {
+    @apply bg-transparent p-0;
+  }
+}

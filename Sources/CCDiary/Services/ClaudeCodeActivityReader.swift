@@ -29,6 +29,22 @@ actor ClaudeCodeActivityReader {
             projectGroups[projectPath] = []
         }
 
+        // Drop excluded projects BEFORE opening their JSONL files. Auto-instrumented
+        // projects like `claude-mem-observer-sessions` can produce huge logs that
+        // hang the reader otherwise.
+        if !options.excludeProjectSubstrings.isEmpty {
+            let beforeCount = projectGroups.count
+            projectGroups = projectGroups.filter { path, _ in
+                !options.excludeProjectSubstrings.contains { sub in
+                    path.localizedCaseInsensitiveContains(sub)
+                }
+            }
+            let dropped = beforeCount - projectGroups.count
+            if dropped > 0 {
+                claudeActivityLogger.notice("readActivity: skipped \(dropped) excluded Claude Code project(s)")
+            }
+        }
+
         guard !projectGroups.isEmpty else {
             return []
         }
