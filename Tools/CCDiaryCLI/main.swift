@@ -63,7 +63,7 @@ enum CCDiaryCLI {
             let result = try await postToSlack(entry: entry, options: options)
             print("Posted to Slack channel \(result.channel) at \(result.timestamp)")
             if result.truncated {
-                fputs("Warning: diary exceeded Slack's 40,000-byte text limit and was truncated.\n", stderr)
+                fputs("Warning: diary exceeded Slack's block limits and was truncated.\n", stderr)
             }
         }
     }
