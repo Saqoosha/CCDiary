@@ -267,12 +267,33 @@ actor ConversationService {
             return []
         }
 
-        let contents = try FileManager.default.contentsOfDirectory(
-            at: projectDir,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        )
+        return try Self.findJSONLFiles(in: projectDir)
+    }
 
-        return contents.filter { $0.pathExtension == "jsonl" }
+    /// Discover Claude Code conversation files that contain activity in a date range.
+    /// This covers sessions that are present in ~/.claude/projects but missing from history.jsonl.
+    func findConversationFilesForDateRange(start: Date, end: Date) async throws -> [String: [URL]] {
+        guard let projectDirs = try? FileManager.default.contentsOfDirectory(
+            at: projectsPath,
+            includingPropertiesForKeys: nil
+        ) else {
+            return [:]
+        }
+
+        let datePrefixes = Self.utcDatePrefixes(start: start, end: end)
+        var result: [String: [URL]] = [:]
+
+        for dir in projectDirs where dir.hasDirectoryPath {
+            let files = (try? Self.findJSONLFiles(in: dir)) ?? []
+            let matchingFiles = files.filter { Self.fileContainsAnyDatePrefix($0, datePrefixes: datePrefixes) }
+            guard !matchingFiles.isEmpty else { continue }
+
+            let projectPath = Self.inferProjectPath(from: matchingFiles, datePrefixes: datePrefixes)
+                ?? Self.decodeProjectDirectoryName(dir.lastPathComponent)
+            result[projectPath, default: []].append(contentsOf: matchingFiles)
+        }
+
+        return result
     }
 
     /// Read conversation entries from a file
@@ -337,7 +358,7 @@ actor ConversationService {
             return []
         }
 
-        let datePrefix = DateFormatting.iso.string(from: start)
+        let datePrefixes = Self.utcDatePrefixes(start: start, end: end)
 
         // Get file size to decide strategy
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
@@ -347,17 +368,21 @@ actor ConversationService {
 
         // For large files (>5MB), use binary search approach
         if fileSize > 5_000_000 {
-            return Self.readEntriesFromLargeFile(fileURL, datePrefix: datePrefix, fileSize: fileSize)
+            let entries = datePrefixes
+                .sorted()
+                .flatMap { Self.readEntriesFromLargeFile(fileURL, datePrefix: $0, fileSize: fileSize) }
+            return Self.filterEntries(entries, start: start, end: end)
         }
 
         // For smaller files, use optimized full scan
-        return Self.readEntriesFromSmallFile(fileURL, datePrefix: datePrefix)
+        let entries = Self.readEntriesFromSmallFile(fileURL, datePrefixes: datePrefixes)
+        return Self.filterEntries(entries, start: start, end: end)
     }
 
     /// Read entries from small files (<10MB) with lightweight decoding
     private nonisolated static func readEntriesFromSmallFile(
         _ fileURL: URL,
-        datePrefix: String
+        datePrefixes: Set<String>
     ) -> [ConversationEntry] {
         guard let data = try? Data(contentsOf: fileURL),
               let text = String(data: data, encoding: .utf8) else {
@@ -365,7 +390,7 @@ actor ConversationService {
         }
 
         // Quick check: if the date string doesn't appear anywhere in the file, skip it
-        if !text.contains(datePrefix) {
+        if !datePrefixes.contains(where: { text.contains($0) }) {
             return []
         }
 
@@ -374,7 +399,7 @@ actor ConversationService {
 
         var entries: [ConversationEntry] = []
         for line in lines {
-            guard lineMatchesDate(String(line), datePrefix: datePrefix) else { continue }
+            guard lineMatchesAnyDatePrefix(String(line), datePrefixes: datePrefixes) else { continue }
             let lineData = Data(line.utf8)
             // Use lightweight decoder
             if let light = try? decoder.decode(LightEntry.self, from: lineData),
@@ -487,6 +512,8 @@ actor ConversationService {
         let type: String
         let message: LightMessage?
         let timestamp: String
+        let sessionId: String?
+        let cwd: String?
         let isMeta: Bool?
 
         struct LightMessage: Decodable {
@@ -544,12 +571,12 @@ actor ConversationService {
                 type: entryType,
                 message: Message(role: role, content: content),
                 timestamp: timestamp,
-                sessionId: nil,
+                sessionId: sessionId,
                 uuid: nil,
                 parentUuid: nil,
                 isSidechain: nil,
                 isMeta: isMeta,
-                cwd: nil,
+                cwd: cwd,
                 version: nil
             )
         }
@@ -1024,6 +1051,139 @@ actor ConversationService {
         }
         let afterKey = line[range.upperBound...]
         return afterKey.hasPrefix(datePrefix)
+    }
+
+    @inline(__always)
+    private static func lineMatchesAnyDatePrefix(_ line: String, datePrefixes: Set<String>) -> Bool {
+        guard let range = line.range(of: "\"timestamp\":\"") else {
+            return false
+        }
+        let afterKey = line[range.upperBound...]
+        return datePrefixes.contains { afterKey.hasPrefix($0) }
+    }
+
+    // Half-open interval `[start, end)` to match CodexActivityReader and avoid
+    // missing/duplicating entries at midnight boundaries.
+    private nonisolated static func filterEntries(
+        _ entries: [ConversationEntry],
+        start: Date,
+        end: Date
+    ) -> [ConversationEntry] {
+        entries.filter { entry in
+            guard let date = entry.date else { return false }
+            return date >= start && date < end
+        }
+    }
+
+    private nonisolated static func utcDatePrefixes(start: Date, end: Date) -> Set<String> {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        var prefixes: Set<String> = [formatter.string(from: start), formatter.string(from: end)]
+        var cursor = Calendar(identifier: .gregorian).startOfDay(for: start)
+        while cursor < end {
+            prefixes.insert(formatter.string(from: cursor))
+            guard let next = Calendar(identifier: .gregorian).date(byAdding: .day, value: 1, to: cursor) else {
+                break
+            }
+            cursor = next
+        }
+        return prefixes
+    }
+
+    private nonisolated static func findJSONLFiles(in directory: URL) throws -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var files: [URL] = []
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "jsonl" {
+            files.append(fileURL)
+        }
+        return files
+    }
+
+    private nonisolated static func fileContainsAnyDatePrefix(
+        _ fileURL: URL,
+        datePrefixes: Set<String>
+    ) -> Bool {
+        guard let handle = FileHandle(forReadingAtPath: fileURL.path) else {
+            return false
+        }
+        defer { try? handle.close() }
+
+        let needles = datePrefixes.map { Data("\"timestamp\":\"\($0)".utf8) }
+        var carry = Data()
+
+        while let chunk = try? handle.read(upToCount: 512 * 1024), !chunk.isEmpty {
+            var data = carry
+            data.append(chunk)
+            if needles.contains(where: { data.range(of: $0) != nil }) {
+                return true
+            }
+
+            let carryCount = min(64, data.count)
+            carry = data.suffix(carryCount)
+        }
+
+        return false
+    }
+
+    private struct ProjectPathProbe: Decodable {
+        let timestamp: String?
+        let cwd: String?
+    }
+
+    private nonisolated static func inferProjectPath(
+        from files: [URL],
+        datePrefixes: Set<String>
+    ) -> String? {
+        let sortedFiles = files.sorted {
+            let leftIsSubagent = $0.path.contains("/subagents/")
+            let rightIsSubagent = $1.path.contains("/subagents/")
+            if leftIsSubagent != rightIsSubagent {
+                return !leftIsSubagent
+            }
+            return $0.path < $1.path
+        }
+
+        let decoder = JSONDecoder()
+        for file in sortedFiles {
+            guard let data = try? Data(contentsOf: file),
+                  let text = String(data: data, encoding: .utf8) else {
+                continue
+            }
+
+            for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+                let lineString = String(line)
+                guard lineMatchesAnyDatePrefix(lineString, datePrefixes: datePrefixes) else {
+                    continue
+                }
+                guard let probe = try? decoder.decode(ProjectPathProbe.self, from: Data(lineString.utf8)),
+                      let cwd = probe.cwd,
+                      !cwd.isEmpty else {
+                    continue
+                }
+                return cwd
+            }
+        }
+
+        return nil
+    }
+
+    // Lossy fallback only — Claude Code's encoding maps both `/` and `.` to `-`,
+    // so paths like `/Users/foo/my-project` cannot be reconstructed. Used only when
+    // the conversation log lacks `cwd`; prefer `inferProjectPath` over this.
+    private nonisolated static func decodeProjectDirectoryName(_ encodedName: String) -> String {
+        let trimmed = encodedName.hasPrefix("-") ? String(encodedName.dropFirst()) : encodedName
+        return "/" + trimmed.split(separator: "-").joined(separator: "/")
     }
 
     /// Filter conversations by time range
