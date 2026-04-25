@@ -53,13 +53,28 @@ struct DayStatistics: Sendable, Codable {
         self.ccProjectCount = try container.decode(Int.self, forKey: .ccProjectCount)
         self.ccSessionCount = try container.decode(Int.self, forKey: .ccSessionCount)
         self.ccMessageCount = try container.decode(Int.self, forKey: .ccMessageCount)
-        self.cursorProjectCount = try container.decode(Int.self, forKey: .cursorProjectCount)
-        self.cursorSessionCount = try container.decode(Int.self, forKey: .cursorSessionCount)
-        self.cursorMessageCount = try container.decode(Int.self, forKey: .cursorMessageCount)
+        self.cursorProjectCount = try container.decodeIfPresent(Int.self, forKey: .cursorProjectCount) ?? 0
+        self.cursorSessionCount = try container.decodeIfPresent(Int.self, forKey: .cursorSessionCount) ?? 0
+        self.cursorMessageCount = try container.decodeIfPresent(Int.self, forKey: .cursorMessageCount) ?? 0
         self.codexProjectCount = try container.decodeIfPresent(Int.self, forKey: .codexProjectCount) ?? 0
         self.codexSessionCount = try container.decodeIfPresent(Int.self, forKey: .codexSessionCount) ?? 0
         self.codexMessageCount = try container.decodeIfPresent(Int.self, forKey: .codexMessageCount) ?? 0
         self.projects = try container.decode([ProjectSummary].self, forKey: .projects)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(date, forKey: .date)
+        try container.encode(ccProjectCount, forKey: .ccProjectCount)
+        try container.encode(ccSessionCount, forKey: .ccSessionCount)
+        try container.encode(ccMessageCount, forKey: .ccMessageCount)
+        try container.encode(cursorProjectCount, forKey: .cursorProjectCount)
+        try container.encode(cursorSessionCount, forKey: .cursorSessionCount)
+        try container.encode(cursorMessageCount, forKey: .cursorMessageCount)
+        try container.encode(codexProjectCount, forKey: .codexProjectCount)
+        try container.encode(codexSessionCount, forKey: .codexSessionCount)
+        try container.encode(codexMessageCount, forKey: .codexMessageCount)
+        try container.encode(projects, forKey: .projects)
     }
 
     // Combined totals
@@ -80,7 +95,7 @@ struct DayStatistics: Sendable, Codable {
 
 /// Summary of a single project's activity for a day
 struct ProjectSummary: Identifiable, Sendable, Codable {
-    // Use source + path as stable ID to avoid collision when multiple sources work on same project
+    // Use source + path as stable ID because multiple agents can work in the same project.
     var id: String { "\(source.rawValue):\(path)" }
     let name: String
     let path: String

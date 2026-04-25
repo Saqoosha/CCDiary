@@ -21,6 +21,7 @@ targets:
       - path: Sources/CCDiary
         excludes:
           - "**/.DS_Store"
+          - "AppIcon.icon/**"
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: sh.saqoo.CCDiary
       PRODUCT_NAME: CCDiary
@@ -65,3 +66,14 @@ targets:
     settings:
       PRODUCT_NAME: cursor-test
       PRODUCT_MODULE_NAME: CursorTestTool
+
+  ccdiary-cli:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Tools/CCDiaryCLI
+      - path: Sources/CCDiary/Services
+      - path: Sources/CCDiary/Models
+    settings:
+      PRODUCT_NAME: ccdiary-cli
+      PRODUCT_MODULE_NAME: CCDiaryCLI

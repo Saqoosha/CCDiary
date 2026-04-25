@@ -606,6 +606,25 @@ actor CursorService {
         let startTime = CFAbsoluteTimeGetCurrent()
         let dateString = DateFormatting.iso.string(from: date)
 
+        // Cursor 3.x stores Agent chats in global cursorDiskKV composerData/bubbleId keys.
+        let globalActivities = try getGlobalActivityForDate(date)
+        if !globalActivities.isEmpty {
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            let totalMessages = globalActivities.reduce(0) { $0 + $1.messages.count }
+            logger.notice("getActivityForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms global (\(globalActivities.count) projects, \(totalMessages) messages)")
+            return globalActivities
+        }
+
+        let activities = try getWorkspaceActivityForDate(date)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+        let totalMessages = activities.reduce(0) { $0 + $1.messages.count }
+        logger.notice("getActivityForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms workspace (\(activities.count) projects, \(totalMessages) messages)")
+
+        return activities
+    }
+
+    /// Legacy workspaceStorage-backed Cursor activity reader.
+    private func getWorkspaceActivityForDate(_ date: Date) throws -> [CursorProjectActivity] {
         let workspaces = getAllWorkspaces()
         var activities: [CursorProjectActivity] = []
 
@@ -643,6 +662,7 @@ actor CursorService {
                 projectName: projectName,
                 messages: allMessages,
                 composerCount: composers.count,
+                composerIds: Set(composers.map(\.composerId)),
                 timeRangeStart: timeRangeStart,
                 timeRangeEnd: timeRangeEnd
             ))
@@ -651,11 +671,210 @@ actor CursorService {
         // Sort by first activity time
         activities.sort { $0.timeRangeStart < $1.timeRangeStart }
 
-        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        let totalMessages = activities.reduce(0) { $0 + $1.messages.count }
-        logger.notice("getActivityForDate(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (\(activities.count) projects, \(totalMessages) messages)")
-
         return activities
+    }
+
+    /// Cursor 3.x globalStorage-backed activity reader.
+    private func getGlobalActivityForDate(_ date: Date) throws -> [CursorProjectActivity] {
+        try openGlobalDB()
+
+        let messagesByComposer = try getGlobalMessagesByComposer(for: date)
+        guard !messagesByComposer.isEmpty else { return [] }
+
+        let composers = try getGlobalComposers(only: Set(messagesByComposer.keys))
+        let composersById = Dictionary(uniqueKeysWithValues: composers.map { ($0.composerId, $0) })
+
+        struct ProjectBucket {
+            var projectName: String
+            var messages: [CursorChatMessage]
+            var composerIds: Set<String>
+            var timeRangeStart: Date
+            var timeRangeEnd: Date
+        }
+
+        var buckets: [String: ProjectBucket] = [:]
+
+        for (composerId, bundle) in messagesByComposer {
+            let composer = composersById[composerId]
+            let inferredProjectPath = AgentActivityUtilities.commonAncestor(for: Array(bundle.paths))
+            let projectPath = composer?.projectPath ?? inferredProjectPath ?? "Cursor/\(composerId)"
+            let fallbackName = composer?.name ?? "Cursor"
+
+            let projectName = (composer?.projectPath ?? inferredProjectPath).map {
+                AgentActivityUtilities.projectName(from: $0, fallback: fallbackName)
+            } ?? fallbackName
+
+            let start = bundle.messages.compactMap(\.timestamp).min() ?? composer?.createdAt ?? .distantPast
+            let end = bundle.messages.compactMap(\.timestamp).max() ?? composer?.lastUpdatedAt ?? start
+
+            var bucket = buckets[projectPath] ?? ProjectBucket(
+                projectName: projectName,
+                messages: [],
+                composerIds: [],
+                timeRangeStart: start,
+                timeRangeEnd: end
+            )
+
+            bucket.messages.append(contentsOf: bundle.messages)
+            bucket.composerIds.insert(composerId)
+            if start < bucket.timeRangeStart { bucket.timeRangeStart = start }
+            if end > bucket.timeRangeEnd { bucket.timeRangeEnd = end }
+            buckets[projectPath] = bucket
+        }
+
+        return buckets.map { projectPath, bucket in
+            CursorProjectActivity(
+                projectPath: projectPath,
+                projectName: bucket.projectName,
+                messages: bucket.messages.sorted { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) },
+                composerCount: bucket.composerIds.count,
+                composerIds: bucket.composerIds,
+                timeRangeStart: bucket.timeRangeStart,
+                timeRangeEnd: bucket.timeRangeEnd
+            )
+        }
+        .sorted { $0.timeRangeStart < $1.timeRangeStart }
+    }
+
+    private func getGlobalMessagesByComposer(for date: Date) throws -> [String: GlobalCursorMessageBundle] {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
+            throw CursorServiceError.invalidDate
+        }
+
+        let query = "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed(errorMsg)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var bundles: [String: GlobalCursorMessageBundle] = [:]
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let keyPtr = sqlite3_column_text(stmt, 0),
+                  let valuePtr = sqlite3_column_blob(stmt, 1) else {
+                continue
+            }
+
+            let key = String(cString: keyPtr)
+            let keyParts = key.split(separator: ":", omittingEmptySubsequences: false)
+            guard keyParts.count >= 3 else { continue }
+            let composerId = String(keyParts[1])
+
+            let valueLength = sqlite3_column_bytes(stmt, 1)
+            let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? Int,
+                  type == 1 || type == 2,
+                  let createdAtStr = json["createdAt"] as? String,
+                  let timestamp = isoFormatter.date(from: createdAtStr),
+                  timestamp >= startOfDay && timestamp < endOfDay,
+                  let text = json["text"] as? String,
+                  !text.isEmpty else {
+                continue
+            }
+
+            let role: MessageRole = type == 1 ? .user : .assistant
+            var bundle = bundles[composerId] ?? GlobalCursorMessageBundle(messages: [], paths: [])
+            bundle.messages.append(CursorChatMessage(role: role, content: text, timestamp: timestamp))
+            bundle.paths.formUnion(Self.collectFileSystemPaths(from: json))
+            bundles[composerId] = bundle
+        }
+
+        return bundles
+    }
+
+    private func getGlobalComposers(only composerIds: Set<String>) throws -> [GlobalCursorComposerInfo] {
+        let query = "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed(errorMsg)
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var composers: [GlobalCursorComposerInfo] = []
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let keyPtr = sqlite3_column_text(stmt, 0),
+                  let valuePtr = sqlite3_column_blob(stmt, 1) else {
+                continue
+            }
+
+            let key = String(cString: keyPtr)
+            let valueLength = sqlite3_column_bytes(stmt, 1)
+            let data = Data(bytes: valuePtr, count: Int(valueLength))
+
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+
+            let keyComposerId = key.replacingOccurrences(of: "composerData:", with: "")
+            let composerId = json["composerId"] as? String ?? keyComposerId
+            guard !composerId.isEmpty else { continue }
+            guard composerIds.contains(composerId) else { continue }
+
+            let createdAtMs = json["createdAt"] as? Double ?? 0
+            let lastUpdatedAtMs = json["lastUpdatedAt"] as? Double ?? createdAtMs
+            let name = json["name"] as? String
+            let projectPath = Self.extractProjectPath(from: json)
+
+            composers.append(GlobalCursorComposerInfo(
+                composerId: composerId,
+                name: name,
+                projectPath: projectPath,
+                createdAt: Date(timeIntervalSince1970: createdAtMs / 1000),
+                lastUpdatedAt: Date(timeIntervalSince1970: lastUpdatedAtMs / 1000)
+            ))
+        }
+
+        return composers
+    }
+
+    private nonisolated static func extractProjectPath(from json: [String: Any]) -> String? {
+        let paths = collectFileSystemPaths(from: json)
+        return AgentActivityUtilities.commonAncestor(for: paths)
+    }
+
+    private nonisolated static func collectFileSystemPaths(from value: Any) -> [String] {
+        var paths: [String] = []
+
+        func walk(_ value: Any, key: String?) {
+            if let string = value as? String {
+                if key == "fsPath", string.hasPrefix("/") {
+                    paths.append(string)
+                } else if key == "path", string.hasPrefix("/") {
+                    paths.append(string)
+                } else if string.hasPrefix("file://"), let url = URL(string: string), url.isFileURL {
+                    paths.append(url.path)
+                }
+                return
+            }
+
+            if let dict = value as? [String: Any] {
+                for (childKey, childValue) in dict {
+                    walk(childValue, key: childKey)
+                }
+                return
+            }
+
+            if let array = value as? [Any] {
+                for item in array {
+                    walk(item, key: key)
+                }
+            }
+        }
+
+        walk(value, key: nil)
+        return Array(Set(paths))
     }
 
     /// Check if there's any Cursor activity on a specific date
@@ -693,12 +912,27 @@ struct CursorComposerInfo: Sendable {
     let lastUpdatedAt: Date
 }
 
+/// Composer metadata from Cursor 3.x globalStorage composerData entries.
+private struct GlobalCursorComposerInfo: Sendable {
+    let composerId: String
+    let name: String?
+    let projectPath: String?
+    let createdAt: Date
+    let lastUpdatedAt: Date
+}
+
+private struct GlobalCursorMessageBundle: Sendable {
+    var messages: [CursorChatMessage]
+    var paths: Set<String>
+}
+
 /// Cursor activity for a single project on a given day
 struct CursorProjectActivity: Sendable {
     let projectPath: String
     let projectName: String
     let messages: [CursorChatMessage]
     let composerCount: Int
+    let composerIds: Set<String>
     let timeRangeStart: Date
     let timeRangeEnd: Date
 
