@@ -1,0 +1,68 @@
+---
+import { env } from 'cloudflare:workers';
+import Layout from '@/layouts/Layout.astro';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { getDiary, rowToStats } from '@/lib/db';
+import { renderDiaryMarkdown } from '@/lib/markdown';
+import { isIsoDate, shiftIsoDate, formatJaLong } from '@/lib/date';
+
+export const prerender = false;
+
+const date = Astro.params.date;
+if (typeof date !== 'string' || !isIsoDate(date)) {
+  return new Response('not found', { status: 404 });
+}
+
+const row = await getDiary(env.DB, date);
+if (!row) {
+  return new Response('not found', { status: 404 });
+}
+
+const stats = rowToStats(row);
+const html = await renderDiaryMarkdown(row.markdown);
+const prev = shiftIsoDate(date, -1);
+const next = shiftIsoDate(date, +1);
+const formattedDate = formatJaLong(date);
+---
+
+<Layout title={`${date} — CCDiary`}>
+  <nav class="mb-4 flex items-center justify-between text-sm">
+    <a href="/" class="text-muted-foreground hover:text-foreground">← Calendar</a>
+    <span class="font-medium">{formattedDate}</span>
+    <span class="opacity-0">·</span>
+  </nav>
+
+  <Card>
+    <CardContent className="px-8 py-6">
+      <article class="prose prose-neutral max-w-none" set:html={html} />
+
+      <div class="mt-8 flex flex-wrap gap-2">
+        {stats.sessions > 0 && (
+          <Badge variant="muted">{stats.sessions} sessions</Badge>
+        )}
+        {stats.messages > 0 && (
+          <Badge variant="muted">{stats.messages.toLocaleString()} messages</Badge>
+        )}
+        {stats.project_count > 0 && (
+          <Badge variant="muted">{stats.project_count} projects</Badge>
+        )}
+        {stats.active_minutes > 0 && (
+          <Badge variant="muted">{Math.round(stats.active_minutes / 60)}h active</Badge>
+        )}
+        {stats.top_project && <Badge variant="outline">top: {stats.top_project}</Badge>}
+        {row.provider && <Badge variant="outline">{row.provider}</Badge>}
+      </div>
+    </CardContent>
+  </Card>
+
+  <div class="mt-6 flex items-center justify-between">
+    <Button asChild variant="ghost" size="sm">
+      <a href={`/${prev}`}>← {prev}</a>
+    </Button>
+    <Button asChild variant="ghost" size="sm">
+      <a href={`/${next}`}>{next} →</a>
+    </Button>
+  </div>
+</Layout>

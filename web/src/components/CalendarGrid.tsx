@@ -1,0 +1,134 @@
+import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+export interface CalendarEntry {
+  date: string;
+  sessions: number;
+  messages: number;
+  top_project: string | null;
+}
+
+interface Props {
+  entries: CalendarEntry[];
+}
+
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+export function CalendarGrid({ entries }: Props) {
+  const map = useMemo(() => new Map(entries.map((e) => [e.date, e])), [entries]);
+  const years = useMemo(() => yearsFromEntries(entries), [entries]);
+  const [year, setYear] = useState<number>(years[0] ?? new Date().getUTCFullYear());
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-1">
+        {years.map((y) => (
+          <Button
+            key={y}
+            type="button"
+            variant={y === year ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setYear(y)}
+          >
+            {y}
+          </Button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 12 }, (_, m) => (
+          <MonthBlock key={m} year={year} month={m} entryMap={map} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MonthBlock({
+  year,
+  month,
+  entryMap,
+}: {
+  year: number;
+  month: number;
+  entryMap: Map<string, CalendarEntry>;
+}) {
+  const cells = monthCells(year, month);
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="rounded-lg border bg-card px-3 py-3">
+      <div className="mb-1.5 text-sm font-semibold">{MONTH_NAMES[month]} {year}</div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+        {WEEKDAY_LABELS.map((label, i) => (
+          <div key={i}>{label}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {cells.map((cell, i) => {
+          if (cell === null) return <div key={i} className="aspect-square" />;
+          const iso = cell.iso;
+          const entry = entryMap.get(iso);
+          const isFuture = iso > todayIso;
+          const has = entry !== undefined;
+          const cls = cn(
+            'aspect-square flex items-center justify-center rounded-[5px] text-[11px] tabular-nums transition-colors',
+            isFuture && 'text-muted-foreground/40',
+            !isFuture && !has && 'text-muted-foreground/70 bg-muted/30',
+            has && 'bg-heat-2 text-foreground hover:bg-heat-3',
+            iso === todayIso && 'ring-2 ring-ring/40 ring-offset-1 ring-offset-card',
+          );
+          if (has) {
+            return (
+              <a
+                key={i}
+                href={`/${iso}`}
+                title={tooltipFor(entry!)}
+                className={cls}
+              >
+                {cell.day}
+              </a>
+            );
+          }
+          return (
+            <div key={i} className={cls}>
+              {cell.day}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function tooltipFor(entry: CalendarEntry): string {
+  const parts = [`${entry.date}`, `${entry.sessions} sessions`, `${entry.messages} msgs`];
+  if (entry.top_project) parts.push(entry.top_project);
+  return parts.join(' · ');
+}
+
+function monthCells(year: number, month: number): ({ day: number; iso: string } | null)[] {
+  const first = new Date(Date.UTC(year, month, 1));
+  const offset = first.getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const cells: ({ day: number; iso: string } | null)[] = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    cells.push({ day: d, iso });
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function yearsFromEntries(entries: CalendarEntry[]): number[] {
+  const set = new Set<number>();
+  for (const e of entries) set.add(parseInt(e.date.slice(0, 4), 10));
+  set.add(new Date().getUTCFullYear());
+  return [...set].sort((a, b) => b - a);
+}

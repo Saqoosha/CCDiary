@@ -1,0 +1,48 @@
+---
+import { env } from 'cloudflare:workers';
+import Layout from '@/layouts/Layout.astro';
+import { listDiaries } from '@/lib/db';
+import { buildStats, loadStatsRows } from '@/lib/stats';
+import { StatsOverview } from '@/components/StatsOverview';
+import { CalendarGrid } from '@/components/CalendarGrid';
+
+export const prerender = false;
+
+const [statsRows, listRows] = await Promise.all([
+  loadStatsRows(env.DB, 'all'),
+  listDiaries(env.DB),
+]);
+const stats = buildStats(statsRows, 'all');
+const entries = listRows.map((row) => ({
+  date: row.date,
+  sessions: row.sessions,
+  messages: row.messages,
+  top_project: row.top_project,
+}));
+---
+
+<Layout title="CCDiary">
+  <header class="mb-6 flex items-center justify-between gap-4">
+    <div class="flex items-baseline gap-3">
+      <span class="text-2xl">✶</span>
+      <h1 class="text-xl font-semibold">What's up next, Saqoosha?</h1>
+    </div>
+    <a
+      href="https://github.com/Saqoosha/CCDiary"
+      target="_blank"
+      rel="noopener"
+      class="text-xs text-muted-foreground hover:text-foreground"
+    >
+      github
+    </a>
+  </header>
+
+  <div class="space-y-8">
+    <StatsOverview client:load initial={stats} />
+
+    <section>
+      <h2 class="mb-3 text-sm font-medium text-muted-foreground">Diaries</h2>
+      <CalendarGrid client:load entries={entries} />
+    </section>
+  </div>
+</Layout>

@@ -18,6 +18,7 @@
 - **複数プロバイダー対応** - Claude API / Gemini API / OpenAI APIから選択可能
 - **大規模ファイル対応** - 87MB超のログファイルもバイナリサーチで高速処理
 - **Markdown出力** - 日記をMarkdown形式で保存・表示
+- **クラウドアーカイブ（オプション）** - 生成済み日記をプライベートな Cloudflare Workers + D1 サイトにミラーし、カレンダー表示と GitHub 風アクティビティヒートマップで閲覧可能。[`web/`](web/) と [デプロイ手順](docs/WEB_DEPLOYMENT.md) を参照
 
 ## インストール
 

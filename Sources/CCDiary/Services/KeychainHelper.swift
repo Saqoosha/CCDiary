@@ -7,6 +7,8 @@ enum KeychainHelper {
     static let geminiAPIService = "sh.saqoo.CCDiary.gemini-api-key"
     static let openAIAPIService = "sh.saqoo.CCDiary.openai-api-key"
     static let slackBotTokenService = "sh.saqoo.CCDiary.slack-bot-token"
+    static let cloudTokenService = "sh.saqoo.CCDiary.cloud-token"
+    static let cloudEndpointService = "sh.saqoo.CCDiary.cloud-endpoint"
 
     // Legacy identifiers for migration
     private static let legacyClaudeAPIService = "com.ccdiary.claude-api-key"

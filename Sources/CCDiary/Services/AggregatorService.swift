@@ -7,6 +7,19 @@ private let logger = Logger(subsystem: "CCDiary", category: "AggregatorService")
 struct AggregateOptions: Sendable {
     var maxContentLength: Int = 10000
     var maxMessagesPerProject: Int = 1000
+    /// Skip Cursor scan entirely. Escape hatch for the case where the global
+    /// `state.vscdb` has grown pathologically large; the CursorService bubble
+    /// index is the proper fix and this flag exists as a fallback.
+    var excludeCursor: Bool = false
+    /// Per-source timeout in seconds. `0` (default) disables the timeout to
+    /// preserve existing call-sites' behavior; the LaunchAgent sets a finite
+    /// value so unattended runs can't hang forever on a single bad reader.
+    var perSourceTimeoutSeconds: Double = 0
+    /// Substrings to match against project name/path. Any project whose name
+    /// or path contains one of these is dropped. Useful for ignoring
+    /// auto-instrumented projects like `claude-mem-observer-sessions` that
+    /// generate huge JSONL files but no useful diary content.
+    var excludeProjectSubstrings: [String] = []
 }
 
 /// Service for aggregating daily activity data
@@ -22,7 +35,8 @@ actor AggregatorService {
         let startTime = CFAbsoluteTimeGetCurrent()
         let dateString = DateFormatting.iso.string(from: date)
 
-        let agentProjects = await readAllAgentProjects(for: date, options: options)
+        let rawAgentProjects = await readAllAgentProjects(for: date, options: options)
+        let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
         var allProjects = agentProjects.map {
             $0.toProjectActivity(
                 maxContentLength: options.maxContentLength,
@@ -51,32 +65,27 @@ actor AggregatorService {
         let claudeReader = self.claudeReader
         let codexReader = self.codexReader
         let cursorReader = self.cursorReader
+        let timeout = options.perSourceTimeoutSeconds
+        let excludeCursor = options.excludeCursor
 
         return await withTaskGroup(of: [AgentProjectActivity].self) { group in
             group.addTask {
-                do {
-                    return try await claudeReader.readActivity(for: date, options: options)
-                } catch {
-                    logger.warning("Failed to read Claude Code activity: \(error.localizedDescription)")
-                    return []
-                }
+                (try? await Self.runWithTimeout(label: "Claude Code", seconds: timeout) {
+                    try await claudeReader.readActivity(for: date, options: options)
+                }) ?? []
             }
 
             group.addTask {
-                do {
-                    return try await codexReader.readActivity(for: date, options: options)
-                } catch {
-                    logger.warning("Failed to read Codex activity: \(error.localizedDescription)")
-                    return []
-                }
+                (try? await Self.runWithTimeout(label: "Codex", seconds: timeout) {
+                    try await codexReader.readActivity(for: date, options: options)
+                }) ?? []
             }
 
-            group.addTask {
-                do {
-                    return try await cursorReader.readActivity(for: date, options: options)
-                } catch {
-                    logger.warning("Failed to read Cursor activity: \(error.localizedDescription)")
-                    return []
+            if !excludeCursor {
+                group.addTask {
+                    (try? await Self.runWithTimeout(label: "Cursor", seconds: timeout) {
+                        try await cursorReader.readActivity(for: date, options: options)
+                    }) ?? []
                 }
             }
 
@@ -88,8 +97,93 @@ actor AggregatorService {
         }
     }
 
+    /// Drops any project whose path or name contains one of the configured
+    /// substrings (case-insensitive). Belt-and-braces with the per-reader
+    /// pre-scan filter — protects sources that don't honor the option yet.
+    private static func filterExcludedProjects(
+        _ projects: [AgentProjectActivity],
+        options: AggregateOptions
+    ) -> [AgentProjectActivity] {
+        guard !options.excludeProjectSubstrings.isEmpty else { return projects }
+        return projects.filter { project in
+            !options.excludeProjectSubstrings.contains { sub in
+                project.path.localizedCaseInsensitiveContains(sub) ||
+                    project.name.localizedCaseInsensitiveContains(sub)
+            }
+        }
+    }
+
+    /// Runs `body` with an optional timeout. Errors and timeouts degrade to an
+    /// empty result so a single bad source can't take down the aggregate run;
+    /// `CancellationError` propagates so a parent-task cancel still reaches the
+    /// caller. `seconds <= 0` disables the timeout. Timeout events are
+    /// surfaced to stderr (not just os_log) so unattended LaunchAgent runs
+    /// leave a visible trail in `daily.err.log`.
+    ///
+    /// Caveat: SQLite scans inside `CursorService` aren't cooperative
+    /// cancellation points, so the body task can keep running in the background
+    /// after the timeout fires. Subsequent calls into the same actor will
+    /// serialize behind it.
+    private static func runWithTimeout(
+        label: String,
+        seconds: Double,
+        body: @escaping @Sendable () async throws -> [AgentProjectActivity]
+    ) async throws -> [AgentProjectActivity] {
+        if seconds <= 0 {
+            do {
+                return try await body()
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                logger.warning("Failed to read \(label) activity: \(error.localizedDescription)")
+                return []
+            }
+        }
+
+        struct TimedOut: Error {
+            let label: String
+            let seconds: Double
+        }
+
+        let result = await withTaskGroup(of: Result<[AgentProjectActivity], Error>.self) { group -> Result<[AgentProjectActivity], Error> in
+            group.addTask {
+                do { return .success(try await body()) }
+                catch { return .failure(error) }
+            }
+            group.addTask {
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                    return .failure(TimedOut(label: label, seconds: seconds))
+                } catch {
+                    // Sleep cancelled (the body finished first or the parent
+                    // task was cancelled). Suspend forever so this loser never
+                    // races ahead of the body's real result.
+                    try? await Task.sleep(nanoseconds: .max)
+                    return .failure(CancellationError())
+                }
+            }
+            defer { group.cancelAll() }
+            return await group.next() ?? .success([])
+        }
+
+        switch result {
+        case .success(let projects):
+            return projects
+        case .failure(let error as TimedOut):
+            let message = "\(error.label) reader exceeded \(Int(error.seconds))s timeout; skipping for this date"
+            logger.warning("\(message)")
+            fputs("Warning: \(message)\n", stderr)
+            return []
+        case .failure(is CancellationError):
+            throw CancellationError()
+        case .failure(let error):
+            logger.warning("Failed to read \(label) activity: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     /// Get quick statistics for a date.
-    func getQuickStatistics(for date: Date) async throws -> DayStatistics? {
+    func getQuickStatistics(for date: Date, options: AggregateOptions = AggregateOptions()) async throws -> DayStatistics? {
         let startTime = CFAbsoluteTimeGetCurrent()
         let dateString = DateFormatting.iso.string(from: date)
 
@@ -101,7 +195,8 @@ actor AggregatorService {
             return cached
         }
 
-        let agentProjects = await readAllAgentProjects(for: date)
+        let rawAgentProjects = await readAllAgentProjects(for: date, options: options)
+        let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
         if agentProjects.isEmpty {
             return nil
         }

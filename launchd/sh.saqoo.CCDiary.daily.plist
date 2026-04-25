@@ -20,6 +20,9 @@
         <string>gemini</string>
         <string>--skip-existing</string>
         <string>--post-slack</string>
+        <string>--post-cloud</string>
+        <string>--source-timeout</string>
+        <string>120</string>
         <string>--max-messages-per-project</string>
         <string>80</string>
         <string>--max-content-length</string>
