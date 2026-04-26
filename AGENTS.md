@@ -178,14 +178,38 @@ scripts/uninstall-daily-launch-agent.sh
 ./build/Build/Products/Release/ccdiary-cli generate --yesterday --slack-channel C0XXXXXXXXX
 ```
 
+### Secrets resolution (env → file → Keychain)
+
+`ccdiary-cli` resolves every secret in this order: process env, then a file at
+`~/.config/ccdiary/secrets` (override with `CCDIARY_SECRETS_FILE`), then
+Keychain. The file uses simple `KEY=value` lines (matching the env var
+names) and should be `chmod 600`. Use it for the LaunchAgent so launchd
+never has to ask for Keychain access (the ACL invalidates on every Release
+rebuild because the binary's ad-hoc signature changes).
+
+```bash
+mkdir -p ~/.config/ccdiary
+cat > ~/.config/ccdiary/secrets <<'EOF'
+SLACK_BOT_TOKEN=xoxb-...
+GEMINI_API_KEY=...
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+CCDIARY_CLOUD_TOKEN=...
+CCDIARY_CLOUD_ENDPOINT=https://ccdiary.saqoo.sh
+EOF
+chmod 600 ~/.config/ccdiary/secrets
+```
+
 ### One-time setup
 
 1. Create a Slack app, give it `chat:write` (and `chat:write.public` if posting to public channels), install to your workspace, and copy the bot token.
-2. Store the token in Keychain so launchd can pick it up without env vars:
+2. Store the token. Two options:
+   - **Recommended for launchd**: write it to `~/.config/ccdiary/secrets` (see above). No Keychain prompts at 04:00.
+   - **GUI app fallback**: keep it in Keychain — the GUI app stores tokens here automatically. The CLI only reaches for Keychain if env and the secrets file don't have it, so each Release rebuild can re-trigger the macOS prompt.
    ```bash
+   # Keychain path (only useful for the GUI app or interactive CLI use):
    security add-generic-password -s sh.saqoo.CCDiary.slack-bot-token -a "$USER" -w xoxb-...
    ```
-   If `ccdiary-cli` later prompts for Keychain access, click **Always Allow** so launchd can read it non-interactively. If you prefer to avoid that, set `SLACK_BOT_TOKEN` in the plist's `EnvironmentVariables` instead (`chmod 600` the plist).
 3. Invite the bot to the private channel: `/invite @your-bot` from inside Slack.
 4. Smoke test the LaunchAgent right after install:
    ```bash

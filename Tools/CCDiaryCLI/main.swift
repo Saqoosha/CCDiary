@@ -141,13 +141,14 @@ enum CCDiaryCLI {
         case .gemini:    envKey = "GEMINI_API_KEY"
         case .openai:    envKey = "OPENAI_API_KEY"
         }
-        return ProcessInfo.processInfo.environment[envKey]
-            ?? KeychainHelper.load(service: provider.keychainService)
+        return SecretResolver.value(envKey: envKey, keychainService: provider.keychainService)
     }
 
     private static func postToSlack(entry: DiaryEntry, options: CLIOptions) async throws -> SlackPostResult {
-        let botToken = ProcessInfo.processInfo.environment["SLACK_BOT_TOKEN"]
-            ?? KeychainHelper.load(service: KeychainHelper.slackBotTokenService)
+        let botToken = SecretResolver.value(
+            envKey: "SLACK_BOT_TOKEN",
+            keychainService: KeychainHelper.slackBotTokenService
+        )
         guard let botToken else {
             throw SlackServiceError.missingBotToken
         }
@@ -170,8 +171,10 @@ enum CCDiaryCLI {
         model: String,
         options: CLIOptions
     ) async throws -> CloudIngestResult {
-        let token = ProcessInfo.processInfo.environment["CCDIARY_CLOUD_TOKEN"]
-            ?? KeychainHelper.load(service: KeychainHelper.cloudTokenService)
+        let token = SecretResolver.value(
+            envKey: "CCDIARY_CLOUD_TOKEN",
+            keychainService: KeychainHelper.cloudTokenService
+        )
         guard let token, !token.isEmpty else {
             throw CloudIngestError.missingToken
         }
@@ -194,8 +197,10 @@ enum CCDiaryCLI {
     private static func configuredCloudEndpoint(options: CLIOptions) -> URL? {
         let raw = [
             options.cloudEndpoint,
-            ProcessInfo.processInfo.environment["CCDIARY_CLOUD_ENDPOINT"],
-            KeychainHelper.load(service: KeychainHelper.cloudEndpointService)
+            SecretResolver.value(
+                envKey: "CCDIARY_CLOUD_ENDPOINT",
+                keychainService: KeychainHelper.cloudEndpointService
+            )
         ]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .first { !$0.isEmpty }
@@ -283,18 +288,24 @@ private struct CLIOptions {
         Repeat for multiple names. Always-on defaults: \(defaultExcludeSubstrings.joined(separator: ", ")).
         Pass --no-default-exclude to disable the always-on list.
 
+    Secret resolution order (per key): process env → secrets file → Keychain.
+    The secrets file lives at ~/.config/ccdiary/secrets (override with
+    CCDIARY_SECRETS_FILE) and uses KEY=value lines. chmod 600 is recommended.
+    Use it to skip Keychain prompts when launchd runs ccdiary-cli at 04:00.
+
     Environment:
-      ANTHROPIC_API_KEY        Used for --provider claude before Keychain fallback
-      GEMINI_API_KEY           Used for --provider gemini before Keychain fallback
-      OPENAI_API_KEY           Used for --provider openai before Keychain fallback
-      SLACK_BOT_TOKEN          Used for --post-slack before Keychain fallback
+      ANTHROPIC_API_KEY        Used for --provider claude before file/Keychain fallback
+      GEMINI_API_KEY           Used for --provider gemini before file/Keychain fallback
+      OPENAI_API_KEY           Used for --provider openai before file/Keychain fallback
+      SLACK_BOT_TOKEN          Used for --post-slack before file/Keychain fallback
       CCDIARY_PROVIDER         Default provider (claude|gemini|openai)
       CCDIARY_SLACK_CHANNEL    Slack channel; takes precedence over SLACK_CHANNEL_ID
       SLACK_CHANNEL_ID         Slack channel; falls back to default (\(defaultSlackChannel))
                                --slack-channel beats both env vars and the default.
-      CCDIARY_CLOUD_TOKEN      Bearer token for --post-cloud before Keychain fallback
+      CCDIARY_CLOUD_TOKEN      Bearer token for --post-cloud before file/Keychain fallback
       CCDIARY_CLOUD_ENDPOINT   Base URL for the cloud archive (e.g. https://ccdiary.saqoo.sh)
-                               --cloud-endpoint beats env var and Keychain.
+                               --cloud-endpoint beats env var, file, and Keychain.
+      CCDIARY_SECRETS_FILE     Override the default secrets file path.
     """
 
     static func parse(_ arguments: [String]) throws -> CLIOptions {
@@ -481,8 +492,10 @@ extension CCDiaryCLI {
     /// Pulls stats from `StatisticsCache` when available and falls back to a
     /// stats-less upload (server keeps existing values) when no cache exists.
     static func runSyncCloud(_ options: SyncCloudOptions) async throws {
-        let token = ProcessInfo.processInfo.environment["CCDIARY_CLOUD_TOKEN"]
-            ?? KeychainHelper.load(service: KeychainHelper.cloudTokenService)
+        let token = SecretResolver.value(
+            envKey: "CCDIARY_CLOUD_TOKEN",
+            keychainService: KeychainHelper.cloudTokenService
+        )
         guard let token, !token.isEmpty else { throw CloudIngestError.missingToken }
 
         guard let endpoint = SyncCloudOptions.resolveEndpoint(options.cloudEndpoint) else {
@@ -577,9 +590,14 @@ struct SyncCloudOptions {
     have a cached DayStatistics, which is what populates the heatmap when you
     backfill historical diaries (slow: ~1–2s per date).
 
+    Secret resolution order (per key): process env → ~/.config/ccdiary/secrets
+    (KEY=value lines, chmod 600) → Keychain. Override the file path with
+    CCDIARY_SECRETS_FILE.
+
     Environment:
       CCDIARY_CLOUD_TOKEN      Bearer token (Keychain fallback: \(KeychainHelper.cloudTokenService))
       CCDIARY_CLOUD_ENDPOINT   Base URL (Keychain fallback: \(KeychainHelper.cloudEndpointService))
+      CCDIARY_SECRETS_FILE     Override the default secrets file path.
     """
 
     static func parse(_ arguments: [String]) throws -> SyncCloudOptions {
@@ -690,8 +708,10 @@ struct SyncCloudOptions {
     static func resolveEndpoint(_ explicit: String?) -> URL? {
         let raw = [
             explicit,
-            ProcessInfo.processInfo.environment["CCDIARY_CLOUD_ENDPOINT"],
-            KeychainHelper.load(service: KeychainHelper.cloudEndpointService)
+            SecretResolver.value(
+                envKey: "CCDIARY_CLOUD_ENDPOINT",
+                keychainService: KeychainHelper.cloudEndpointService
+            )
         ]
         .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
         .first { !$0.isEmpty }
