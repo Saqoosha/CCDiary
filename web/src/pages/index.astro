@@ -3,10 +3,14 @@ import { env } from 'cloudflare:workers';
 import Layout from '@/layouts/Layout.astro';
 import { listDiaries } from '@/lib/db';
 import { buildStats, loadStatsRows } from '@/lib/stats';
+import { isDiaryOwner } from '@/lib/owner';
 import { StatsOverview } from '@/components/StatsOverview';
 import { CalendarGrid } from '@/components/CalendarGrid';
 
 export const prerender = false;
+
+const gated = Boolean(env.CCDIARY_SITE_PASSWORD?.trim());
+const canOpenDiaries = await isDiaryOwner(Astro.request, env);
 
 const [statsRows, listRows] = await Promise.all([
   loadStatsRows(env.DB, 'all'),
@@ -27,14 +31,31 @@ const entries = listRows.map((row) => ({
       <span class="text-2xl">✶</span>
       <h1 class="text-xl font-semibold">What's up next, Saqoosha?</h1>
     </div>
-    <a
-      href="https://github.com/Saqoosha/CCDiary"
-      target="_blank"
-      rel="noopener"
-      class="text-xs text-muted-foreground hover:text-foreground"
-    >
-      github
-    </a>
+    <div class="flex items-center gap-3">
+      {gated && canOpenDiaries && (
+        <form method="POST" action="/api/auth/logout" class="inline">
+          <button
+            type="submit"
+            class="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Log out
+          </button>
+        </form>
+      )}
+      {gated && !canOpenDiaries && (
+        <a href="/login" class="text-xs text-muted-foreground hover:text-foreground">Log in</a>
+      )}
+      {canOpenDiaries && (
+        <a
+          href="https://github.com/Saqoosha/CCDiary"
+          target="_blank"
+          rel="noopener"
+          class="text-xs text-muted-foreground hover:text-foreground"
+        >
+          github
+        </a>
+      )}
+    </div>
   </header>
 
   <div class="space-y-8">
@@ -42,7 +63,7 @@ const entries = listRows.map((row) => ({
 
     <section>
       <h2 class="mb-3 text-sm font-medium text-muted-foreground">Diaries</h2>
-      <CalendarGrid client:load entries={entries} />
+      <CalendarGrid client:load entries={entries} linkToDiaries={canOpenDiaries} />
     </section>
   </div>
 </Layout>

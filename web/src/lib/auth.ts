@@ -1,9 +1,6 @@
 /**
- * Bearer-token check used by the ingest endpoint.
- *
- * The token is stored as a Worker secret (`CCDIARY_INGEST_TOKEN`) and shared
- * with the Mac side via Keychain. Cloudflare Access takes care of human auth
- * for everything else, so this only guards POSTs.
+ * Bearer-token check used by the ingest endpoint (`CCDIARY_INGEST_TOKEN`).
+ * Browser sessions use `/login` and a signed cookie instead.
  */
 export async function checkBearer(request: Request, secret: string | undefined): Promise<boolean> {
   if (!secret) return false;
@@ -11,6 +8,13 @@ export async function checkBearer(request: Request, secret: string | undefined):
   if (!header.toLowerCase().startsWith('bearer ')) return false;
   const provided = header.slice(7).trim();
   return await timingSafeEqual(provided, secret);
+}
+
+/**
+ * Constant-time comparison for the site password and other shared secrets.
+ */
+export async function compareSecret(a: string, b: string): Promise<boolean> {
+  return timingSafeEqual(a, b);
 }
 
 /**

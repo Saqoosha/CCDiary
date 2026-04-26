@@ -1,3 +1,7 @@
 # Copy to `.dev.vars` for local development with `wrangler dev`.
 # Do NOT commit `.dev.vars` (already in .gitignore).
 CCDIARY_INGEST_TOKEN="dev-local-token"
+
+# Optional: set both to require /login before diary pages (omit for open local dev).
+# CCDIARY_SITE_PASSWORD="your-password"
+# CCDIARY_SESSION_SECRET="min-32-chars-random-string-for-hmac"

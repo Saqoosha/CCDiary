@@ -1,0 +1,36 @@
+---
+import Layout from '@/layouts/Layout.astro';
+
+export const prerender = false;
+
+const bad = Astro.url.searchParams.get('bad') === '1';
+---
+
+<Layout title="Log in — CCDiary">
+  <h1 class="mb-6 text-lg font-semibold">Log in</h1>
+  {bad && (
+    <p class="mb-4 text-sm text-destructive">Wrong password. Try again.</p>
+  )}
+  <form method="POST" action="/api/auth/login" class="max-w-sm space-y-4">
+    <div>
+      <label for="password" class="mb-1 block text-sm text-muted-foreground">Password</label>
+      <input
+        id="password"
+        name="password"
+        type="password"
+        required
+        autocomplete="current-password"
+        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+      />
+    </div>
+    <button
+      type="submit"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+    >
+      Continue
+    </button>
+  </form>
+  <p class="mt-6 text-xs text-muted-foreground">
+    <a href="/" class="underline hover:text-foreground">← Back to calendar</a>
+  </p>
+</Layout>

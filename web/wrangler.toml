@@ -23,6 +23,10 @@ database_id = "REPLACE_WITH_DATABASE_ID"
 
 # Secrets are not declared here. Set with:
 #   echo "$TOKEN" | wrangler secret put CCDIARY_INGEST_TOKEN
+#   echo "$PW"   | wrangler secret put CCDIARY_SITE_PASSWORD
+#   openssl rand -base64 32 | wrangler secret put CCDIARY_SESSION_SECRET
+#
+# When CCDIARY_SITE_PASSWORD is set, use /login so the browser gets a signed session cookie.
 
 [observability]
 enabled = true

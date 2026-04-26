@@ -68,24 +68,21 @@ curl https://ccdiary.<account>.workers.dev/api/stats
 Cloudflare dashboard → **Workers & Pages → ccdiary → Settings → Domains & Routes**
 → **Add → Custom domain** → `ccdiary.saqoo.sh`. Cloudflare provisions the cert.
 
-## 5. Cloudflare Access (Zero Trust)
+## 5. Browser login (diary pages)
 
-Dashboard → **Zero Trust → Access → Applications** → **Add application**:
+The public calendar works without logging in; diary HTML, deep links, and
+`GET /api/diaries` require a session cookie from [`/login`](../web/src/pages/login.astro).
 
-- Type: **Self-hosted**
-- Application domain: `ccdiary.saqoo.sh`
-- Identity provider: Google (saqoo.sh tenant)
-- **Policy 1 — humans**:
-  - Action: **Allow**
-  - Include: `Emails ends with @whatever.co` (or just `saqoosha@whatever.co`)
-- **Policy 2 — ingest bypass**:
-  - Action: **Bypass**
-  - Path includes: `/api/diaries`
-  - Method: `POST`
-  - (Bearer auth is enforced inside the Worker via the secret from step 2)
+Set two Worker secrets (strong password + random signing key):
 
-Save. Visit `https://ccdiary.saqoo.sh/` in a browser — you should be bounced
-through the Google login the first time.
+```bash
+echo 'your-long-random-password' | bunx wrangler secret put CCDIARY_SITE_PASSWORD
+openssl rand -base64 32 | bunx wrangler secret put CCDIARY_SESSION_SECRET
+```
+
+Redeploy after changing secrets. Optional Cloudflare Access in front of the
+hostname is unrelated to this cookie — you can skip Zero Trust for this app if
+you rely on password login only.
 
 ## 6. Backfill historical diaries
 
@@ -124,5 +121,5 @@ to D1 in one shot.
 | `Cloud ingest token not configured` | `security find-generic-password -s sh.saqoo.CCDiary.cloud-token` returns nothing — re-run step 2 |
 | `Cloud ingest error (401)` | Token in Keychain doesn't match the Worker secret. Repush both with the same `$TOKEN` |
 | `database_id` placeholder still in `wrangler.toml` | Re-run step 1 and update the file |
-| Cloudflare Access blocks `POST /api/diaries` | Bypass policy missing or wrong path. Re-check step 5 policy 2 |
+| Diary pages 404 in browser | Log in at `/login`, or secrets missing / wrong |
 | Browser shows the page but stats panel is empty | D1 has no rows yet — run step 6 |
