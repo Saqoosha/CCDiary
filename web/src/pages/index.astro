@@ -44,9 +44,6 @@ const entries = listRows.map((row) => ({
           </button>
         </form>
       )}
-      {gated && !canOpenDiaries && (
-        <a href="/login" class="text-xs text-muted-foreground hover:text-foreground">Log in</a>
-      )}
       {lockedWithoutGate && (
         <span
           class="text-xs text-amber-800"
