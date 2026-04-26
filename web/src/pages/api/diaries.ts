@@ -2,10 +2,18 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { listDiaries, upsertDiary, type UpsertDiaryInput } from '@/lib/db';
 import { isIsoDate } from '@/lib/date';
+import { isDiaryOwner } from '@/lib/owner';
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
+  if (!(await isDiaryOwner(request, env))) {
+    return new Response(JSON.stringify({ error: 'not found' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+  }
+
   const from = url.searchParams.get('from') ?? undefined;
   const to = url.searchParams.get('to') ?? undefined;
   if (from && !isIsoDate(from)) return badRequest('from must be YYYY-MM-DD');

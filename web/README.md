@@ -7,7 +7,7 @@ them through a calendar + GitHub-style activity heatmap.
 - **Runtime**: Cloudflare Workers (Astro 6 SSR via `@astrojs/cloudflare`)
 - **Storage**: D1 (`ccdiary` database) — markdown + per-day stats
 - **UI**: Tailwind v4 + shadcn/ui (`new-york`, `neutral`, light-mode only)
-- **Auth**: Cloudflare Access for human routes; bearer token for `POST /api/diaries`
+- **Auth**: `/login` + signed cookie (`CCDIARY_SITE_PASSWORD` / `CCDIARY_SESSION_SECRET`); bearer token for `POST /api/diaries`. A Worker deploy **without** a site password stays locked; use `CCDIARY_OPEN_WITHOUT_PASSWORD=1` in `.dev.vars` for `wrangler dev` only, or rely on `astro dev` (unlocked when no password is set).
 
 See [`docs/WEB_DEPLOYMENT.md`](../docs/WEB_DEPLOYMENT.md) for the full
 deployment runbook.
@@ -48,5 +48,5 @@ Set the production secret once:
 echo "$CCDIARY_INGEST_TOKEN" | bunx wrangler secret put CCDIARY_INGEST_TOKEN
 ```
 
-The custom domain (`ccdiary.saqoo.sh`) and Cloudflare Access policy are
-configured in the dashboard — see the deployment doc.
+The custom domain (`ccdiary.saqoo.sh`) is configured in the dashboard; set the
+login secrets with `wrangler secret put` — see the deployment doc.

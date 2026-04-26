@@ -11,6 +11,8 @@ interface HeatmapGridProps {
   days: HeatmapDay[];
   /** Limit how far back the chart goes; null/0 = show all data we have. */
   windowDays?: number | null;
+  /** When false, cells have no `title` tooltip (public / logged-out view). */
+  showCellTooltips?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ interface HeatmapGridProps {
  * empty days at the start of the window are rendered as level-0 cells so the
  * grid stays rectangular.
  */
-export function HeatmapGrid({ days, windowDays = null }: HeatmapGridProps) {
+export function HeatmapGrid({ days, windowDays = null, showCellTooltips = true }: HeatmapGridProps) {
   const grid = useMemo(() => buildGrid(days, windowDays), [days, windowDays]);
 
   return (
@@ -28,7 +30,7 @@ export function HeatmapGrid({ days, windowDays = null }: HeatmapGridProps) {
         {grid.weeks.map((week, wi) => (
           <div key={wi} className="flex flex-col gap-[3px]">
             {week.map((cell, ri) => (
-              <Cell key={`${wi}-${ri}`} cell={cell} />
+              <Cell key={`${wi}-${ri}`} cell={cell} showTooltip={showCellTooltips} />
             ))}
           </div>
         ))}
@@ -48,14 +50,14 @@ interface GridCell {
   level: 0 | 1 | 2 | 3 | 4;
 }
 
-function Cell({ cell }: { cell: GridCell }) {
+function Cell({ cell, showTooltip }: { cell: GridCell; showTooltip: boolean }) {
   if (cell.date === null) {
     return <div className="size-3 rounded-[3px] opacity-0" />;
   }
   const tooltip = `${cell.date} · ${cell.sessions} sessions · ${cell.messages} msgs`;
   return (
     <div
-      title={tooltip}
+      title={showTooltip ? tooltip : undefined}
       className={cn(
         'size-3 rounded-[3px] transition-colors',
         cell.level === 0 && 'bg-heat-0',

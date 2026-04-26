@@ -2,22 +2,28 @@
 import { env } from 'cloudflare:workers';
 import Layout from '@/layouts/Layout.astro';
 import { listDiaries } from '@/lib/db';
-import { buildStats, loadStatsRows } from '@/lib/stats';
+import { buildStats, loadStatsRows, redactPublicStats } from '@/lib/stats';
+import { isDiaryOwner } from '@/lib/owner';
 import { StatsOverview } from '@/components/StatsOverview';
 import { CalendarGrid } from '@/components/CalendarGrid';
 
 export const prerender = false;
 
+const gated = Boolean(env.CCDIARY_SITE_PASSWORD?.trim());
+const canOpenDiaries = await isDiaryOwner(Astro.request, env);
+
 const [statsRows, listRows] = await Promise.all([
   loadStatsRows(env.DB, 'all'),
   listDiaries(env.DB),
 ]);
-const stats = buildStats(statsRows, 'all');
+const statsRaw = buildStats(statsRows, 'all');
+const stats = canOpenDiaries ? statsRaw : redactPublicStats(statsRaw);
+const lockedWithoutGate = !gated && !canOpenDiaries;
 const entries = listRows.map((row) => ({
   date: row.date,
   sessions: row.sessions,
   messages: row.messages,
-  top_project: row.top_project,
+  top_project: canOpenDiaries ? row.top_project : null,
 }));
 ---
 
@@ -27,22 +33,47 @@ const entries = listRows.map((row) => ({
       <span class="text-2xl">✶</span>
       <h1 class="text-xl font-semibold">What's up next, Saqoosha?</h1>
     </div>
-    <a
-      href="https://github.com/Saqoosha/CCDiary"
-      target="_blank"
-      rel="noopener"
-      class="text-xs text-muted-foreground hover:text-foreground"
-    >
-      github
-    </a>
+    <div class="flex items-center gap-3">
+      {gated && canOpenDiaries && (
+        <form method="POST" action="/api/auth/logout" class="inline">
+          <button
+            type="submit"
+            class="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Log out
+          </button>
+        </form>
+      )}
+      {gated && !canOpenDiaries && (
+        <a href="/login" class="text-xs text-muted-foreground hover:text-foreground">Log in</a>
+      )}
+      {lockedWithoutGate && (
+        <span
+          class="text-xs text-amber-800"
+          title="Set CCDIARY_SITE_PASSWORD + CCDIARY_SESSION_SECRET, or CCDIARY_OPEN_WITHOUT_PASSWORD=1 in .dev.vars for local open mode."
+        >
+          Locked (no site password)
+        </span>
+      )}
+      {canOpenDiaries && (
+        <a
+          href="https://github.com/Saqoosha/CCDiary"
+          target="_blank"
+          rel="noopener"
+          class="text-xs text-muted-foreground hover:text-foreground"
+        >
+          github
+        </a>
+      )}
+    </div>
   </header>
 
   <div class="space-y-8">
-    <StatsOverview client:load initial={stats} />
+    <StatsOverview client:load initial={stats} showHeatmapTooltips={canOpenDiaries} />
 
     <section>
       <h2 class="mb-3 text-sm font-medium text-muted-foreground">Diaries</h2>
-      <CalendarGrid client:load entries={entries} />
+      <CalendarGrid client:load entries={entries} linkToDiaries={canOpenDiaries} />
     </section>
   </div>
 </Layout>

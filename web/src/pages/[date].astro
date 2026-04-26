@@ -7,11 +7,18 @@ import { Button } from '@/components/ui/button';
 import { getDiary, rowToStats } from '@/lib/db';
 import { renderDiaryMarkdown } from '@/lib/markdown';
 import { isIsoDate, shiftIsoDate, formatJaLong } from '@/lib/date';
+import { isDiaryOwner } from '@/lib/owner';
 
 export const prerender = false;
 
+const canOpenDiaries = await isDiaryOwner(Astro.request, env);
+
 const date = Astro.params.date;
 if (typeof date !== 'string' || !isIsoDate(date)) {
+  return new Response('not found', { status: 404 });
+}
+
+if (!canOpenDiaries) {
   return new Response('not found', { status: 404 });
 }
 

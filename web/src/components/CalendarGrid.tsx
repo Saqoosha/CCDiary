@@ -11,6 +11,8 @@ export interface CalendarEntry {
 
 interface Props {
   entries: CalendarEntry[];
+  /** When false, days with diaries look the same but are not links (public calendar). */
+  linkToDiaries?: boolean;
 }
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -19,7 +21,7 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-export function CalendarGrid({ entries }: Props) {
+export function CalendarGrid({ entries, linkToDiaries = true }: Props) {
   const map = useMemo(() => new Map(entries.map((e) => [e.date, e])), [entries]);
   const years = useMemo(() => yearsFromEntries(entries), [entries]);
   const [year, setYear] = useState<number>(years[0] ?? new Date().getUTCFullYear());
@@ -42,7 +44,7 @@ export function CalendarGrid({ entries }: Props) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 12 }, (_, m) => (
-          <MonthBlock key={m} year={year} month={m} entryMap={map} />
+          <MonthBlock key={m} year={year} month={m} entryMap={map} linkToDiaries={linkToDiaries} />
         ))}
       </div>
     </section>
@@ -53,10 +55,12 @@ function MonthBlock({
   year,
   month,
   entryMap,
+  linkToDiaries,
 }: {
   year: number;
   month: number;
   entryMap: Map<string, CalendarEntry>;
+  linkToDiaries: boolean;
 }) {
   const cells = monthCells(year, month);
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -80,19 +84,24 @@ function MonthBlock({
             'aspect-square flex items-center justify-center rounded-[5px] text-[11px] tabular-nums transition-colors',
             isFuture && 'text-muted-foreground/40',
             !isFuture && !has && 'text-muted-foreground/70 bg-muted/30',
-            has && 'bg-heat-2 text-foreground hover:bg-heat-3',
+            has && 'bg-heat-2 text-foreground',
+            has && linkToDiaries && 'cursor-pointer hover:bg-heat-3',
+            has && !linkToDiaries && 'cursor-default',
             iso === todayIso && 'ring-2 ring-ring/40 ring-offset-1 ring-offset-card',
           );
           if (has) {
+            const title = linkToDiaries ? tooltipFor(entry!) : undefined;
+            if (linkToDiaries) {
+              return (
+                <a key={i} href={`/${iso}`} title={title} className={cls}>
+                  {cell.day}
+                </a>
+              );
+            }
             return (
-              <a
-                key={i}
-                href={`/${iso}`}
-                title={tooltipFor(entry!)}
-                className={cls}
-              >
+              <div key={i} className={cls}>
                 {cell.day}
-              </a>
+              </div>
             );
           }
           return (

@@ -227,7 +227,7 @@ chmod 600 ~/.config/ccdiary/secrets
 
 ## Cloud Archive (`web/`)
 
-The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated diary into D1 and presents a calendar + stats heatmap at `https://ccdiary.saqoo.sh`. Cloudflare Access (Google IdP) gates the human-facing routes; `POST /api/diaries` is bypassed by Access and protected by a bearer token instead.
+The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated diary into D1 and presents a calendar + stats heatmap at `https://ccdiary.saqoo.sh`. Browser auth is a single password at `/login` (secrets `CCDIARY_SITE_PASSWORD` + `CCDIARY_SESSION_SECRET`); diary pages and `GET /api/diaries` need that session cookie. `POST /api/diaries` uses the ingest bearer token only.
 
 - Endpoint storage (priority): `--cloud-endpoint URL` → `CCDIARY_CLOUD_ENDPOINT` env → Keychain `sh.saqoo.CCDiary.cloud-endpoint`
 - Token storage (priority): `CCDIARY_CLOUD_TOKEN` env → Keychain `sh.saqoo.CCDiary.cloud-token`

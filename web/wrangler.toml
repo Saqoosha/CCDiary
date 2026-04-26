@@ -3,26 +3,33 @@ main = "@astrojs/cloudflare/entrypoints/server"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
+# Pin the Cloudflare account (wrangler whoami → Saqoosha / a@saqoo.sh).
+account_id = "0f56ad2619afc619cc2975dd0728f8a9"
+
 # Astro builds static assets into ./dist; the Worker is bundled separately by the adapter.
 assets = { directory = "./dist", binding = "ASSETS" }
 
 workers_dev = true
 preview_urls = false
 routes = [
-    { pattern = "ccdiary.saqoo.sh", custom_domain = true }
+    { pattern = "ccdiary.saqoo.sh", custom_domain = true, zone_name = "saqoo.sh" }
 ]
 
-# D1 database. Run `wrangler d1 create ccdiary`, then paste the database_id below.
-# (Personal IDs are intentionally NOT committed to the public repo — the
-# placeholder is replaced locally by `scripts/configure-wrangler.sh` or by
-# the deployer following docs/WEB_DEPLOYMENT.md.)
 [[d1_databases]]
 binding = "DB"
 database_name = "ccdiary"
-database_id = "REPLACE_WITH_DATABASE_ID"
+database_id = "75b2c80b-36e3-4106-b9df-3eafead59fcb"
+
+[[kv_namespaces]]
+binding = "SESSION"
+id = "977e0420fd814098bbf579814b07b3aa"
 
 # Secrets are not declared here. Set with:
 #   echo "$TOKEN" | wrangler secret put CCDIARY_INGEST_TOKEN
+#   echo "$PW"   | wrangler secret put CCDIARY_SITE_PASSWORD
+#   openssl rand -base64 32 | wrangler secret put CCDIARY_SESSION_SECRET
+#
+# When CCDIARY_SITE_PASSWORD is set, use /login so the browser gets a signed session cookie.
 
 [observability]
 enabled = true
