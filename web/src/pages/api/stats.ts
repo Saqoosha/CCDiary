@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { buildStats, loadStatsRows, type StatsRange } from '@/lib/stats';
+import { buildStats, loadStatsRows, redactPublicStats, type StatsRange } from '@/lib/stats';
+import { isDiaryOwner } from '@/lib/owner';
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = async ({ url, request }) => {
   const raw = url.searchParams.get('range');
   const range = parseRange(raw);
   if (range === null) {
@@ -16,7 +17,8 @@ export const GET: APIRoute = async ({ url }) => {
 
   try {
     const rows = await loadStatsRows(env.DB, range);
-    const stats = buildStats(rows, range);
+    const raw = buildStats(rows, range);
+    const stats = (await isDiaryOwner(request, env)) ? raw : redactPublicStats(raw);
     return new Response(JSON.stringify(stats), {
       headers: {
         'content-type': 'application/json; charset=utf-8',

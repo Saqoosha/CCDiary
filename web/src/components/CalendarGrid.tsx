@@ -84,11 +84,13 @@ function MonthBlock({
             'aspect-square flex items-center justify-center rounded-[5px] text-[11px] tabular-nums transition-colors',
             isFuture && 'text-muted-foreground/40',
             !isFuture && !has && 'text-muted-foreground/70 bg-muted/30',
-            has && 'bg-heat-2 text-foreground hover:bg-heat-3',
+            has && 'bg-heat-2 text-foreground',
+            has && linkToDiaries && 'cursor-pointer hover:bg-heat-3',
+            has && !linkToDiaries && 'cursor-default',
             iso === todayIso && 'ring-2 ring-ring/40 ring-offset-1 ring-offset-card',
           );
           if (has) {
-            const title = tooltipFor(entry!);
+            const title = linkToDiaries ? tooltipFor(entry!) : undefined;
             if (linkToDiaries) {
               return (
                 <a key={i} href={`/${iso}`} title={title} className={cls}>
@@ -97,7 +99,7 @@ function MonthBlock({
               );
             }
             return (
-              <div key={i} title={title} className={cls}>
+              <div key={i} className={cls}>
                 {cell.day}
               </div>
             );

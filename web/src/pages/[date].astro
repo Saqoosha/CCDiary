@@ -11,7 +11,6 @@ import { isDiaryOwner } from '@/lib/owner';
 
 export const prerender = false;
 
-const gated = Boolean(env.CCDIARY_SITE_PASSWORD?.trim());
 const canOpenDiaries = await isDiaryOwner(Astro.request, env);
 
 const date = Astro.params.date;
@@ -19,7 +18,7 @@ if (typeof date !== 'string' || !isIsoDate(date)) {
   return new Response('not found', { status: 404 });
 }
 
-if (gated && !canOpenDiaries) {
+if (!canOpenDiaries) {
   return new Response('not found', { status: 404 });
 }
 
@@ -66,24 +65,11 @@ const formattedDate = formatJaLong(date);
   </Card>
 
   <div class="mt-6 flex items-center justify-between">
-    {canOpenDiaries ? (
-      <>
-        <Button asChild variant="ghost" size="sm">
-          <a href={`/${prev}`}>← {prev}</a>
-        </Button>
-        <Button asChild variant="ghost" size="sm">
-          <a href={`/${next}`}>{next} →</a>
-        </Button>
-      </>
-    ) : (
-      <>
-        <Button variant="ghost" size="sm" disabled className="pointer-events-none opacity-40">
-          ← {prev}
-        </Button>
-        <Button variant="ghost" size="sm" disabled className="pointer-events-none opacity-40">
-          {next} →
-        </Button>
-      </>
-    )}
+    <Button asChild variant="ghost" size="sm">
+      <a href={`/${prev}`}>← {prev}</a>
+    </Button>
+    <Button asChild variant="ghost" size="sm">
+      <a href={`/${next}`}>{next} →</a>
+    </Button>
   </div>
 </Layout>

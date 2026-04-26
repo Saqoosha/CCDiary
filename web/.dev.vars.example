@@ -2,6 +2,10 @@
 # Do NOT commit `.dev.vars` (already in .gitignore).
 CCDIARY_INGEST_TOKEN="dev-local-token"
 
-# Optional: set both to require /login before diary pages (omit for open local dev).
+# For `wrangler dev` / preview (production build): without CCDIARY_SITE_PASSWORD,
+# allow open access locally. Not needed for `astro dev` (unlocked when no password).
+CCDIARY_OPEN_WITHOUT_PASSWORD=1
+
+# Optional: require /login (remove CCDIARY_OPEN_WITHOUT_PASSWORD when using this).
 # CCDIARY_SITE_PASSWORD="your-password"
 # CCDIARY_SESSION_SECRET="min-32-chars-random-string-for-hmac"

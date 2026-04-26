@@ -7,7 +7,7 @@ import { isDiaryOwner } from '@/lib/owner';
 export const prerender = false;
 
 export const GET: APIRoute = async ({ url, request }) => {
-  if (env.CCDIARY_SITE_PASSWORD?.trim() && !(await isDiaryOwner(request, env))) {
+  if (!(await isDiaryOwner(request, env))) {
     return new Response(JSON.stringify({ error: 'not found' }), {
       status: 404,
       headers: { 'content-type': 'application/json; charset=utf-8' },

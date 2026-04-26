@@ -121,6 +121,17 @@ export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
   };
 }
 
+/** Hide aggregated top project for public / logged-out visitors. */
+export function redactPublicStats(stats: StatsResponse): StatsResponse {
+  return {
+    ...stats,
+    cards: {
+      ...stats.cards,
+      top_project: { value: '—' },
+    },
+  };
+}
+
 function rangeStart(range: '30d' | '7d'): string {
   const days = range === '30d' ? 30 : 7;
   const d = new Date();

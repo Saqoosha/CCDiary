@@ -31,9 +31,11 @@ interface StatsResponse {
 
 interface Props {
   initial: StatsResponse;
+  /** Heatmap cell tooltips; off when the visitor cannot open diary pages. */
+  showHeatmapTooltips?: boolean;
 }
 
-export function StatsOverview({ initial }: Props) {
+export function StatsOverview({ initial, showHeatmapTooltips = true }: Props) {
   const [range, setRange] = useState<Range>(initial.range);
   const [data, setData] = useState<StatsResponse>(initial);
   const [loading, setLoading] = useState(false);
@@ -103,7 +105,11 @@ export function StatsOverview({ initial }: Props) {
           </div>
 
           <div className="mt-4">
-            <HeatmapGrid days={data.heatmap} windowDays={heatmapWindow} />
+            <HeatmapGrid
+              days={data.heatmap}
+              windowDays={heatmapWindow}
+              showCellTooltips={showHeatmapTooltips}
+            />
           </div>
 
           {data.fun_fact && (

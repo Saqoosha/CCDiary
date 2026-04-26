@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Layout from '@/layouts/Layout.astro';
 import { listDiaries } from '@/lib/db';
-import { buildStats, loadStatsRows } from '@/lib/stats';
+import { buildStats, loadStatsRows, redactPublicStats } from '@/lib/stats';
 import { isDiaryOwner } from '@/lib/owner';
 import { StatsOverview } from '@/components/StatsOverview';
 import { CalendarGrid } from '@/components/CalendarGrid';
@@ -16,12 +16,14 @@ const [statsRows, listRows] = await Promise.all([
   loadStatsRows(env.DB, 'all'),
   listDiaries(env.DB),
 ]);
-const stats = buildStats(statsRows, 'all');
+const statsRaw = buildStats(statsRows, 'all');
+const stats = canOpenDiaries ? statsRaw : redactPublicStats(statsRaw);
+const lockedWithoutGate = !gated && !canOpenDiaries;
 const entries = listRows.map((row) => ({
   date: row.date,
   sessions: row.sessions,
   messages: row.messages,
-  top_project: row.top_project,
+  top_project: canOpenDiaries ? row.top_project : null,
 }));
 ---
 
@@ -45,6 +47,14 @@ const entries = listRows.map((row) => ({
       {gated && !canOpenDiaries && (
         <a href="/login" class="text-xs text-muted-foreground hover:text-foreground">Log in</a>
       )}
+      {lockedWithoutGate && (
+        <span
+          class="text-xs text-amber-800"
+          title="Set CCDIARY_SITE_PASSWORD + CCDIARY_SESSION_SECRET, or CCDIARY_OPEN_WITHOUT_PASSWORD=1 in .dev.vars for local open mode."
+        >
+          Locked (no site password)
+        </span>
+      )}
       {canOpenDiaries && (
         <a
           href="https://github.com/Saqoosha/CCDiary"
@@ -59,7 +69,7 @@ const entries = listRows.map((row) => ({
   </header>
 
   <div class="space-y-8">
-    <StatsOverview client:load initial={stats} />
+    <StatsOverview client:load initial={stats} showHeatmapTooltips={canOpenDiaries} />
 
     <section>
       <h2 class="mb-3 text-sm font-medium text-muted-foreground">Diaries</h2>
