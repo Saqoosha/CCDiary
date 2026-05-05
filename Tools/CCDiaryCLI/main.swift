@@ -7,6 +7,7 @@ enum CCDiaryCLI {
         let helpForSubcommand: String = {
             switch subcommand {
             case "sync-cloud": return SyncCloudOptions.help
+            case "push-stats": return PushStatsOptions.help
             default:           return CLIOptions.help
             }
         }()
@@ -16,6 +17,9 @@ enum CCDiaryCLI {
             case "generate":
                 let options = try CLIOptions.parse(args)
                 try await runGenerate(options)
+            case "push-stats":
+                let options = try PushStatsOptions.parse(args)
+                try await runPushStats(options)
             case "sync-cloud":
                 let options = try SyncCloudOptions.parse(args)
                 try await runSyncCloud(options)
@@ -51,7 +55,29 @@ enum CCDiaryCLI {
         }
 
         print("Aggregating \(DateFormatting.iso.string(from: options.date))...")
-        let activity = try await aggregator.aggregateForDate(options.date, options: aggregateOptions)
+        var activity = try await aggregator.aggregateForDate(options.date, options: aggregateOptions)
+
+        // Fetch and merge cloud stats from other Macs when --merge-cloud-stats is set.
+        var remoteStatsForCloud: [DayStatistics] = []
+        if options.mergeCloudStats {
+            let result = try? await fetchHostStatsForDate(
+                date: activity.isoDateString,
+                options: options
+            )
+            if let result, !result.hosts.isEmpty {
+                let remoteDigests = result.hosts.map { $0.digest }
+                let remoteHosts = result.hosts.map { $0.host }
+                remoteStatsForCloud = result.hosts.map { $0.stats }
+                activity = HostStatsMergeService.mergeDailyActivity(
+                    local: activity,
+                    remoteDigests: remoteDigests,
+                    remoteHosts: remoteHosts
+                )
+                print("Merged stats from \(result.hosts.count) remote host(s): \(remoteHosts.joined(separator: ", "))")
+            } else {
+                print("No remote host stats found for \(activity.isoDateString) — using local activity only.")
+            }
+        }
 
         if activity.projects.isEmpty {
             print("No activity found for \(activity.isoDateString).")
@@ -92,7 +118,14 @@ enum CCDiaryCLI {
         }
 
         if options.postCloud {
-            let stats = try? await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+            var stats = try? await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+            // Merge local stats with remote stats when --merge-cloud-stats is set.
+            if options.mergeCloudStats, !remoteStatsForCloud.isEmpty, let localStats = stats {
+                stats = HostStatsMergeService.mergeDayStatistics(
+                    local: localStats,
+                    remotes: remoteStatsForCloud
+                )
+            }
             let result = try await postToCloud(
                 entry: entry,
                 stats: stats,
@@ -219,6 +252,24 @@ enum CCDiaryCLI {
         .first { !$0.isEmpty }
     }
 
+    /// Fetch host-stats from the cloud endpoint. Returns nil on any error
+    /// (network, missing config, etc.) so the caller can gracefully degrade.
+    private static func fetchHostStatsForDate(
+        date: String,
+        options: CLIOptions
+    ) async throws -> HostStatsFetchService.FetchResult? {
+        let token = SecretResolver.value(
+            envKey: "CCDIARY_CLOUD_TOKEN",
+            keychainService: KeychainHelper.cloudTokenService
+        )
+        guard let token, !token.isEmpty else { return nil }
+
+        guard let endpoint = configuredCloudEndpoint(options: options) else { return nil }
+
+        let service = HostStatsFetchService()
+        return try await service.fetch(date: date, endpoint: endpoint, token: token)
+    }
+
     private static func printSummary(_ activity: DailyActivity) {
         print("Dry run for \(activity.isoDateString)")
         print("Projects: \(activity.projects.count)")
@@ -261,6 +312,8 @@ private struct CLIOptions {
     var excludeCursor: Bool
     var perSourceTimeoutSeconds: Double
     var excludeProjectSubstrings: [String]
+    var mergeCloudStats: Bool
+    var host: String?
 
     static let defaultSlackChannel = "C033F6U7147"
     /// Always-on default exclusions. Auto-instrumented projects whose JSONL
@@ -277,6 +330,7 @@ private struct CLIOptions {
                            [--post-cloud] [--cloud-endpoint URL]
                            [--no-cursor] [--source-timeout SECONDS]
                            [--exclude-project NAME] [--no-default-exclude]
+                           [--merge-cloud-stats] [--host HOSTNAME]
 
     Notes:
       --force and --skip-existing are mutually exclusive (rejected at parse time).
@@ -287,6 +341,10 @@ private struct CLIOptions {
       --exclude-project NAME drops projects whose path/name contains NAME.
         Repeat for multiple names. Always-on defaults: \(defaultExcludeSubstrings.joined(separator: ", ")).
         Pass --no-default-exclude to disable the always-on list.
+      --merge-cloud-stats fetches host-stats from other Macs via the cloud endpoint
+        and merges them into the local diary. Implies --force (always regenerate).
+        Requires CCDIARY_CLOUD_TOKEN and CCDIARY_CLOUD_ENDPOINT.
+      --host HOSTNAME identifies this Mac when pushing stats (default: hostname).
 
     Secret resolution order (per key): process env → secrets file → Keychain.
     The secrets file lives at ~/.config/ccdiary/secrets (override with
@@ -331,6 +389,8 @@ private struct CLIOptions {
         var perSourceTimeoutSeconds: Double = 0
         var excludeProjectSubstrings: [String] = []
         var disableDefaultExclude = false
+        var mergeCloudStats = false
+        var host: String?
 
         var index = 1
         while index < arguments.count {
@@ -421,6 +481,16 @@ private struct CLIOptions {
                 excludeProjectSubstrings.append(arguments[index])
             case "--no-default-exclude":
                 disableDefaultExclude = true
+            case "--merge-cloud-stats":
+                mergeCloudStats = true
+                // Merging implies force — always regenerate to incorporate remote data.
+                force = true
+            case "--host":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--host requires a hostname")
+                }
+                host = arguments[index]
             default:
                 throw CLIError.invalidArgument("Unknown argument: \(arg)")
             }
@@ -454,7 +524,9 @@ private struct CLIOptions {
             cloudEndpoint: cloudEndpoint,
             excludeCursor: excludeCursor,
             perSourceTimeoutSeconds: perSourceTimeoutSeconds,
-            excludeProjectSubstrings: excludeProjectSubstrings
+            excludeProjectSubstrings: excludeProjectSubstrings,
+            mergeCloudStats: mergeCloudStats,
+            host: host
         )
     }
 
@@ -717,6 +789,199 @@ struct SyncCloudOptions {
         .first { !$0.isEmpty }
         guard let raw, let url = URL(string: raw), url.scheme != nil else { return nil }
         return url
+    }
+}
+
+extension CCDiaryCLI {
+    /// Push local stats to the cloud host-stats endpoint. Runs on every Mac
+    /// (both primary and secondary) so the primary Mac's generate run can merge
+    /// activity from all hosts.
+    static func runPushStats(_ options: PushStatsOptions) async throws {
+        let aggregator = AggregatorService()
+        let aggregateOptions = AggregateOptions(
+            maxContentLength: options.maxContentLength,
+            maxMessagesPerProject: options.maxMessagesPerProject,
+            excludeCursor: options.excludeCursor,
+            perSourceTimeoutSeconds: options.perSourceTimeoutSeconds,
+            excludeProjectSubstrings: options.excludeProjectSubstrings
+        )
+
+        let dateString = DateFormatting.iso.string(from: options.date)
+
+        // Fetch both quick stats and full activity.
+        print("Aggregating stats for \(dateString)...")
+        guard let stats = try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions) else {
+            print("No activity found for \(dateString) — nothing to push.")
+            return
+        }
+
+        print("Aggregating full activity for \(dateString)...")
+        let activity = try await aggregator.aggregateForDate(options.date, options: aggregateOptions)
+
+        if activity.projects.isEmpty {
+            print("No projects found for \(dateString) — pushing stats only (no digest).")
+        }
+
+        let hostname = options.host
+        let digest = activity.toDigestPayload()
+        let payload = HostStatsPayload(
+            date: dateString,
+            host: hostname,
+            stats: stats,
+            digest: digest,
+            updatedAt: Int(Date().timeIntervalSince1970)
+        )
+
+        let token = SecretResolver.value(
+            envKey: "CCDIARY_CLOUD_TOKEN",
+            keychainService: KeychainHelper.cloudTokenService
+        )
+        guard let token, !token.isEmpty else {
+            throw HostStatsPushError.missingToken
+        }
+
+        guard let endpoint = PushStatsOptions.resolveEndpoint(options.cloudEndpoint) else {
+            throw CloudIngestError.missingEndpoint
+        }
+
+        let service = HostStatsPushService()
+        let result = try await service.push(payload, endpoint: endpoint, token: token)
+        let action = result.inserted ? "inserted" : "updated"
+        print("Pushed host stats for \(dateString) host \(hostname) → \(action) (HTTP \(result.statusCode))")
+    }
+}
+
+struct PushStatsOptions {
+    var date: Date
+    var host: String
+    var cloudEndpoint: String?
+    var maxContentLength: Int
+    var maxMessagesPerProject: Int
+    var excludeCursor: Bool
+    var perSourceTimeoutSeconds: Double
+    var excludeProjectSubstrings: [String]
+
+    static let help = """
+    Usage:
+      ccdiary-cli push-stats [--date YYYY-MM-DD | --yesterday | --today]
+                             [--host HOSTNAME] [--cloud-endpoint URL]
+                             [--source-timeout SECONDS]
+                             [--exclude-project NAME] [--no-default-exclude]
+
+    Aggregates local activity statistics and pushes them to the cloud host-stats
+    endpoint so the primary Mac can merge them during diary generation. Should run
+    on every Mac in the fleet (typically via LaunchAgent at 04:00).
+
+    --host defaults to the machine's localized hostname (Host.current().localizedName).
+
+    Secret resolution order (per key): process env → secrets file → Keychain.
+
+    Environment:
+      CCDIARY_CLOUD_TOKEN      Bearer token for the cloud endpoint
+      CCDIARY_CLOUD_ENDPOINT   Base URL (e.g. https://ccdiary.saqoo.sh)
+      CCDIARY_SECRETS_FILE     Override the default secrets file path.
+    """
+
+    static func parse(_ arguments: [String]) throws -> PushStatsOptions {
+        guard let command = arguments.first, command == "push-stats" else {
+            throw CLIError.helpRequested
+        }
+
+        var date = Self.yesterday()
+        var host = ProcessInfo.processInfo.environment["CCDIARY_HOST_NAME"]
+                   ?? Host.current().localizedName
+                   ?? "unknown"
+        var endpoint: String?
+        var maxContentLength = 10_000
+        var maxMessagesPerProject = 1_000
+        var excludeCursor = false
+        var perSourceTimeoutSeconds: Double = 120
+        var excludeProjectSubstrings: [String] = []
+        var disableDefaultExclude = false
+
+        var index = 1
+        while index < arguments.count {
+            let arg = arguments[index]
+            switch arg {
+            case "--help", "-h":
+                throw CLIError.helpRequested
+            case "--today":
+                date = Date()
+            case "--yesterday":
+                date = Self.yesterday()
+            case "--date":
+                index += 1
+                guard index < arguments.count,
+                      let parsedDate = DateFormatting.iso.date(from: arguments[index]) else {
+                    throw CLIError.invalidArgument("--date requires YYYY-MM-DD")
+                }
+                date = parsedDate
+            case "--host":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--host requires a hostname")
+                }
+                host = arguments[index]
+            case "--cloud-endpoint":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--cloud-endpoint requires a URL")
+                }
+                endpoint = arguments[index]
+            case "--source-timeout":
+                index += 1
+                guard index < arguments.count, let value = Double(arguments[index]), value >= 0 else {
+                    throw CLIError.invalidArgument("--source-timeout requires a non-negative number of seconds")
+                }
+                perSourceTimeoutSeconds = value
+            case "--exclude-project":
+                index += 1
+                guard index < arguments.count, !arguments[index].isEmpty else {
+                    throw CLIError.invalidArgument("--exclude-project requires a project name or path substring")
+                }
+                excludeProjectSubstrings.append(arguments[index])
+            case "--no-default-exclude":
+                disableDefaultExclude = true
+            default:
+                throw CLIError.invalidArgument("Unknown argument: \(arg)")
+            }
+            index += 1
+        }
+
+        if !disableDefaultExclude {
+            for sub in CLIOptions.defaultExcludeSubstrings where !excludeProjectSubstrings.contains(sub) {
+                excludeProjectSubstrings.append(sub)
+            }
+        }
+
+        return PushStatsOptions(
+            date: date,
+            host: host,
+            cloudEndpoint: endpoint,
+            maxContentLength: maxContentLength,
+            maxMessagesPerProject: maxMessagesPerProject,
+            excludeCursor: excludeCursor,
+            perSourceTimeoutSeconds: perSourceTimeoutSeconds,
+            excludeProjectSubstrings: excludeProjectSubstrings
+        )
+    }
+
+    static func resolveEndpoint(_ explicit: String?) -> URL? {
+        let raw = [
+            explicit,
+            SecretResolver.value(
+                envKey: "CCDIARY_CLOUD_ENDPOINT",
+                keychainService: KeychainHelper.cloudEndpointService
+            )
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+        guard let raw, let url = URL(string: raw), url.scheme != nil else { return nil }
+        return url
+    }
+
+    private static func yesterday() -> Date {
+        Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
     }
 }
 

@@ -56,3 +56,15 @@ CREATE TRIGGER diaries_ad AFTER DELETE ON diaries BEGIN
     INSERT INTO diaries_fts(diaries_fts, rowid, date, markdown)
     VALUES ('delete', old.rowid, old.date, old.markdown);
 END;
+
+-- Per-host daily stats for multi-Mac diary merging.
+CREATE TABLE IF NOT EXISTS host_stats (
+    date        TEXT NOT NULL,
+    host        TEXT NOT NULL,
+    stats_json  TEXT NOT NULL,
+    digest_json TEXT,
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (date, host)
+);
+
+CREATE INDEX IF NOT EXISTS idx_host_stats_date ON host_stats(date);

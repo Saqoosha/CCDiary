@@ -4,30 +4,41 @@
     Template plist. install-daily-launch-agent.sh substitutes:
         @CCDIARY_BIN@   →  absolute path to the built ccdiary-cli binary
         @LOG_DIR@       →  absolute path to ~/Library/Logs/CCDiary
-    Do not commit the rendered version with absolute paths.
+    Do not commit the rendered version with absolute forms.
 
-    Runs on every Mac in the fleet to push local activity stats to the cloud.
-    The primary Mac runs a separate daily-generate agent that fetches and
-    merges stats from all hosts before generating the diary.
+    Runs ONLY on the primary Mac. Generates the diary from local activity
+    merged with host-stats pushed by other Macs in the fleet, then posts
+    to Slack and the cloud archive.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>sh.saqoo.CCDiary.daily</string>
+    <string>sh.saqoo.CCDiary.daily-generate</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>@CCDIARY_BIN@</string>
-        <string>push-stats</string>
+        <string>generate</string>
         <string>--yesterday</string>
+        <string>--provider</string>
+        <string>gemini</string>
+        <string>--merge-cloud-stats</string>
+        <string>--post-slack</string>
+        <string>--post-cloud</string>
         <string>--source-timeout</string>
         <string>120</string>
+        <string>--max-messages-per-project</string>
+        <string>80</string>
+        <string>--max-content-length</string>
+        <string>2000</string>
     </array>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>LANG</key>
         <string>en_US.UTF-8</string>
+        <key>CCDIARY_PRIMARY</key>
+        <string>true</string>
         <key>CCDIARY_HOST_NAME</key>
         <string>@HOST_NAME@</string>
     </dict>
@@ -37,7 +48,7 @@
         <key>Hour</key>
         <integer>4</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>5</integer>
     </dict>
 
     <key>StandardOutPath</key>

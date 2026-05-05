@@ -237,3 +237,22 @@ The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated 
 - Backfill historical diaries with `ccdiary-cli sync-cloud [--from YYYY-MM-DD] [--to YYYY-MM-DD]`. Pulls `DayStatistics` from `StatisticsCache` when available.
 - Local dev: `cd web && bun install && bun run db:apply:local && bun run dev` (server at `localhost:4321`). Use `dev-local-token` from `.dev.vars.example` for local POSTs.
 - Full deploy runbook: [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
+
+
+<claude-mem-context>
+# Memory Context
+
+# [CCDiary] recent context, 2026-05-03 9:18pm GMT+9
+
+Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
+Format: ID TIME TYPE TITLE
+Fetch details: get_observations([IDs]) | Search: mem-search skill
+
+Stats: 2 obs (517t read) | 24,968t work | 98% savings
+
+### Apr 25, 2026
+142 10:46a ⚖️ Automated Daily Diary System Architecture Plan
+143 " 🔵 CCDiary Project Repository Located at ~/Documents/repos/Personal/CCDiary
+
+Access 25k tokens of past work via get_observations([IDs]) or mem-search skill.
+</claude-mem-context>

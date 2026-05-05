@@ -189,3 +189,66 @@ export async function upsertDiary(
 
   return { inserted: !existed };
 }
+
+/** Per-host stats row from the host_stats table. */
+export interface HostStatsRow {
+  date: string;
+  host: string;
+  stats_json: string;
+  digest_json: string | null;
+  updated_at: number;
+}
+
+export interface UpsertHostStatsInput {
+  date: string;
+  host: string;
+  stats: Record<string, unknown>;
+  digest: Record<string, unknown> | null;
+}
+
+export async function upsertHostStats(
+  db: D1Database,
+  input: UpsertHostStatsInput,
+): Promise<{ inserted: boolean }> {
+  const now = Math.floor(Date.now() / 1000);
+  const statsJson = JSON.stringify(input.stats);
+  const digestJson = input.digest ? JSON.stringify(input.digest) : null;
+
+  const before = await db
+    .prepare('SELECT 1 FROM host_stats WHERE date = ? AND host = ?')
+    .bind(input.date, input.host)
+    .first();
+  const existed = before !== null;
+
+  await db
+    .prepare(`
+      INSERT INTO host_stats (date, host, stats_json, digest_json, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT(date, host) DO UPDATE SET
+        stats_json = excluded.stats_json,
+        digest_json = excluded.digest_json,
+        updated_at = excluded.updated_at
+    `)
+    .bind(input.date, input.host, statsJson, digestJson, now)
+    .run();
+
+  return { inserted: !existed };
+}
+
+export async function getHostStats(
+  db: D1Database,
+  date: string,
+): Promise<HostStatsRow[]> {
+  const stmt = db
+    .prepare('SELECT date, host, stats_json, digest_json, updated_at FROM host_stats WHERE date = ? ORDER BY host')
+    .bind(date);
+  const result = await stmt.all<HostStatsRow>();
+  return result.results ?? [];
+}
+
+export async function getHostStatsDates(db: D1Database): Promise<string[]> {
+  const result = await db
+    .prepare('SELECT DISTINCT date FROM host_stats ORDER BY date DESC')
+    .all<{ date: string }>();
+  return (result.results ?? []).map((r) => r.date);
+}

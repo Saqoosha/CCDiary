@@ -6,7 +6,7 @@ import { checkBearer, unauthorized } from '@/lib/auth';
 export const onRequest = defineMiddleware(async (ctx, next) => {
   const { request } = ctx;
   const url = new URL(request.url);
-  const isIngest = url.pathname === '/api/diaries' && request.method === 'POST';
+  const isIngest = (url.pathname === '/api/diaries' || url.pathname === '/api/host-stats') && request.method === 'POST';
 
   if (isIngest && !(await checkBearer(request, env.CCDIARY_INGEST_TOKEN))) {
     return unauthorized();
