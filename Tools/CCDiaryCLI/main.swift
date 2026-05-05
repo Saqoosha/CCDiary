@@ -60,20 +60,32 @@ enum CCDiaryCLI {
         // Fetch and merge cloud stats from other Macs when --merge-cloud-stats is set.
         var remoteStatsForCloud: [DayStatistics] = []
         if options.mergeCloudStats {
-            let result = try? await fetchHostStatsForDate(
-                date: activity.isoDateString,
-                options: options
-            )
-            if let result, !result.hosts.isEmpty {
-                let remoteDigests = result.hosts.map { $0.digest }
-                let remoteHosts = result.hosts.map { $0.host }
-                remoteStatsForCloud = result.hosts.map { $0.stats }
-                activity = HostStatsMergeService.mergeDailyActivity(
-                    local: activity,
-                    remoteDigests: remoteDigests,
-                    remoteHosts: remoteHosts
+            let fetchResult: HostStatsFetchService.FetchResult?
+            do {
+                fetchResult = try await fetchHostStatsForDate(
+                    date: activity.isoDateString,
+                    options: options
                 )
-                print("Merged stats from \(result.hosts.count) remote host(s): \(remoteHosts.joined(separator: ", "))")
+            } catch {
+                fputs("Warning: failed to fetch remote host stats: \(error.localizedDescription)\n", stderr)
+                fetchResult = nil
+            }
+            if let result = fetchResult, !result.hosts.isEmpty {
+                let localHost = resolveLocalHost()
+                let otherHosts = result.hosts.filter { $0.host != localHost }
+                if otherHosts.isEmpty {
+                    print("Remote host stats found but all are from local host (\(localHost)) — using local activity only.")
+                } else {
+                    let remoteDigests = otherHosts.map { $0.digest }
+                    let remoteHosts = otherHosts.map { $0.host }
+                    remoteStatsForCloud = otherHosts.map { $0.stats }
+                    activity = HostStatsMergeService.mergeDailyActivity(
+                        local: activity,
+                        remoteDigests: remoteDigests,
+                        remoteHosts: remoteHosts
+                    )
+                    print("Merged stats from \(otherHosts.count) remote host(s): \(remoteHosts.joined(separator: ", "))")
+                }
             } else {
                 print("No remote host stats found for \(activity.isoDateString) — using local activity only.")
             }
@@ -118,7 +130,13 @@ enum CCDiaryCLI {
         }
 
         if options.postCloud {
-            var stats = try? await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+            var stats: DayStatistics?
+            do {
+                stats = try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+            } catch {
+                fputs("Warning: failed to compute quick statistics: \(error.localizedDescription)\n", stderr)
+                stats = nil
+            }
             // Merge local stats with remote stats when --merge-cloud-stats is set.
             if options.mergeCloudStats, !remoteStatsForCloud.isEmpty, let localStats = stats {
                 stats = HostStatsMergeService.mergeDayStatistics(
@@ -252,6 +270,12 @@ enum CCDiaryCLI {
         .first { !$0.isEmpty }
     }
 
+    private static func resolveLocalHost() -> String {
+        ProcessInfo.processInfo.environment["CCDIARY_HOST_NAME"]
+            ?? Host.current().localizedName
+            ?? "unknown"
+    }
+
     /// Fetch host-stats from the cloud endpoint. Returns nil on any error
     /// (network, missing config, etc.) so the caller can gracefully degrade.
     private static func fetchHostStatsForDate(
@@ -313,7 +337,6 @@ private struct CLIOptions {
     var perSourceTimeoutSeconds: Double
     var excludeProjectSubstrings: [String]
     var mergeCloudStats: Bool
-    var host: String?
 
     static let defaultSlackChannel = "C033F6U7147"
     /// Always-on default exclusions. Auto-instrumented projects whose JSONL
@@ -330,7 +353,7 @@ private struct CLIOptions {
                            [--post-cloud] [--cloud-endpoint URL]
                            [--no-cursor] [--source-timeout SECONDS]
                            [--exclude-project NAME] [--no-default-exclude]
-                           [--merge-cloud-stats] [--host HOSTNAME]
+                           [--merge-cloud-stats]
 
     Notes:
       --force and --skip-existing are mutually exclusive (rejected at parse time).
@@ -344,7 +367,6 @@ private struct CLIOptions {
       --merge-cloud-stats fetches host-stats from other Macs via the cloud endpoint
         and merges them into the local diary. Implies --force (always regenerate).
         Requires CCDIARY_CLOUD_TOKEN and CCDIARY_CLOUD_ENDPOINT.
-      --host HOSTNAME identifies this Mac when pushing stats (default: hostname).
 
     Secret resolution order (per key): process env → secrets file → Keychain.
     The secrets file lives at ~/.config/ccdiary/secrets (override with
@@ -390,7 +412,6 @@ private struct CLIOptions {
         var excludeProjectSubstrings: [String] = []
         var disableDefaultExclude = false
         var mergeCloudStats = false
-        var host: String?
 
         var index = 1
         while index < arguments.count {
@@ -485,12 +506,6 @@ private struct CLIOptions {
                 mergeCloudStats = true
                 // Merging implies force — always regenerate to incorporate remote data.
                 force = true
-            case "--host":
-                index += 1
-                guard index < arguments.count, !arguments[index].isEmpty else {
-                    throw CLIError.invalidArgument("--host requires a hostname")
-                }
-                host = arguments[index]
             default:
                 throw CLIError.invalidArgument("Unknown argument: \(arg)")
             }
@@ -525,8 +540,7 @@ private struct CLIOptions {
             excludeCursor: excludeCursor,
             perSourceTimeoutSeconds: perSourceTimeoutSeconds,
             excludeProjectSubstrings: excludeProjectSubstrings,
-            mergeCloudStats: mergeCloudStats,
-            host: host
+            mergeCloudStats: mergeCloudStats
         )
     }
 
@@ -607,7 +621,12 @@ extension CCDiaryCLI {
                     perSourceTimeoutSeconds: options.perSourceTimeoutSeconds,
                     excludeProjectSubstrings: options.excludeProjectSubstrings
                 )
-                stats = try? await aggregator.getQuickStatistics(for: date, options: aggregateOptions)
+                do {
+                    stats = try await aggregator.getQuickStatistics(for: date, options: aggregateOptions)
+                } catch {
+                    fputs("  \(entry.dateString) → stats computation failed: \(error.localizedDescription)\n", stderr)
+                    stats = nil
+                }
             }
             do {
                 let result = try await service.upload(
@@ -872,7 +891,7 @@ struct PushStatsOptions {
     endpoint so the primary Mac can merge them during diary generation. Should run
     on every Mac in the fleet (typically via LaunchAgent at 04:00).
 
-    --host defaults to the machine's localized hostname (Host.current().localizedName).
+    --host respects CCDIARY_HOST_NAME env var, falling back to the machine's localized hostname.
 
     Secret resolution order (per key): process env → secrets file → Keychain.
 

@@ -21,16 +21,24 @@ enum HostStatsMergeService {
                 if let existingIdx = allProjects.firstIndex(where: {
                     $0.path == project.path && $0.source == project.source
                 }) {
-                    // Merge: interleave conversations by timestamp.
+                    // Merge: interleave conversations by timestamp, deduplicated by (timestamp, role, content).
                     let existing = allProjects[existingIdx]
+                    var seen = Set<String>()
                     let mergedConversations = (existing.conversations + project.conversations)
+                        .filter { msg in
+                            let key = "\(Int(msg.timestamp.timeIntervalSince1970))|\(msg.role.rawValue)|\(msg.content.hashValue)"
+                            return seen.insert(key).inserted
+                        }
                         .sorted { $0.timestamp < $1.timestamp }
                     let mergedRange = min(
                         existing.timeRange.lowerBound, project.timeRange.lowerBound
                     )...max(
                         existing.timeRange.upperBound, project.timeRange.upperBound
                     )
-                    let mergedInputs = Array(Set(existing.userInputs + project.userInputs))
+                    var mergedInputs = existing.userInputs
+                    for input in project.userInputs where !mergedInputs.contains(input) {
+                        mergedInputs.append(input)
+                    }
                     let mergedStats = ProjectStats(
                         totalMessages: existing.stats.totalMessages + project.stats.totalMessages,
                         usedMessages: existing.stats.usedMessages + project.stats.usedMessages,
