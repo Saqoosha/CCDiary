@@ -1,6 +1,6 @@
 import Foundation
 
-/// Payload sent to /api/host-stats for multi-Mac statistics aggregation.
+/// Payload sent to and received from /api/host-stats for multi-Mac statistics aggregation.
 struct HostStatsPayload: Codable {
     let date: String          // YYYY-MM-DD
     let host: String
@@ -60,6 +60,8 @@ extension DigestProject {
         let stats = ProjectStats(
             totalMessages: totalMessages,
             usedMessages: usedMessages,
+            // Digest only carries the used subset of messages,
+            // so totalChars == usedChars here.
             totalChars: conversations.reduce(0) { $0 + $1.content.count },
             usedChars: conversations.reduce(0) { $0 + $1.content.count },
             truncatedCount: max(0, totalMessages - usedMessages)

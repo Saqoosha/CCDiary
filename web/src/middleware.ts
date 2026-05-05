@@ -2,13 +2,13 @@ import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import { checkBearer, unauthorized } from '@/lib/auth';
 
-/** Bearer auth for `POST /api/diaries` only; browser auth uses `/login` + cookie. */
+/** Bearer auth for ingest endpoints. Browser access to diaries uses `/login` + cookie. */
 export const onRequest = defineMiddleware(async (ctx, next) => {
   const { request } = ctx;
   const url = new URL(request.url);
-  const isIngest = (url.pathname === '/api/diaries' || url.pathname === '/api/host-stats') && request.method === 'POST';
+  const isApiAuth = url.pathname === '/api/diaries' || url.pathname === '/api/host-stats';
 
-  if (isIngest && !(await checkBearer(request, env.CCDIARY_INGEST_TOKEN))) {
+  if (isApiAuth && !(await checkBearer(request, env.CCDIARY_INGEST_TOKEN))) {
     return unauthorized();
   }
 
