@@ -133,6 +133,11 @@ actor CodexActivityReader {
         var title: String?
         var messages: [AgentActivityMessage] = []
         var seenMessages: Set<String> = []
+        // Codex Desktop's "import Claude Code web session" stamps task_started
+        // with turn_id "external-import-turn-*". Those rollouts dump entire
+        // imported transcripts as response_item messages, which would otherwise
+        // be counted as real local work.
+        var isExternalImport = false
 
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let lineData = line.data(using: .utf8),
@@ -155,6 +160,14 @@ actor CodexActivityReader {
                 continue
             }
 
+            if type == "event_msg",
+               (payload["type"] as? String) == "task_started",
+               let turnId = payload["turn_id"] as? String,
+               turnId.hasPrefix("external-import-") {
+                isExternalImport = true
+                break
+            }
+
             guard let timestampString = object["timestamp"] as? String,
                   let timestamp = DateFormatting.parseISO8601(timestampString),
                   timestamp >= start && timestamp < end else {
@@ -168,6 +181,10 @@ actor CodexActivityReader {
                 seenMessages.insert(dedupeKey)
                 messages.append(message)
             }
+        }
+
+        if isExternalImport {
+            return nil
         }
 
         guard !messages.isEmpty else {
