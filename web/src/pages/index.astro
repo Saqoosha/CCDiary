@@ -35,10 +35,10 @@ const entries = listRows.map((row) => ({
     </div>
     <div class="flex items-center gap-3">
       {gated && canOpenDiaries && (
-        <form method="POST" action="/api/auth/logout" class="inline">
+        <form method="POST" action="/api/auth/logout" class="contents">
           <button
             type="submit"
-            class="text-xs text-muted-foreground hover:text-foreground"
+            class="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
           >
             Log out
           </button>
