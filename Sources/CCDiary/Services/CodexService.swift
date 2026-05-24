@@ -363,6 +363,7 @@ actor CodexService {
         var fallbackTimestamp: Date?
         var messages: [CodexChatMessage] = []
         var isSubagentSession = false
+        var isExternalImport = false
         var skippedLines = 0
 
         for line in lines {
@@ -389,6 +390,16 @@ actor CodexService {
                 continue
             }
 
+            // Codex Desktop's bulk import of Claude Code web sessions stamps
+            // task_started with `external-import-turn-*`. Those rollouts are
+            // not real local work — exclude the whole session.
+            if event.type == "event_msg",
+               event.payload?.type == "task_started",
+               event.payload?.turnId?.hasPrefix("external-import-") == true {
+                isExternalImport = true
+                continue
+            }
+
             guard event.type == "response_item",
                   event.payload?.type == "message",
                   let role = parseRole(event.payload?.role),
@@ -411,7 +422,7 @@ actor CodexService {
             messages.append(CodexChatMessage(role: role, content: textContent, timestamp: timestamp))
         }
 
-        if isSubagentSession {
+        if isSubagentSession || isExternalImport {
             return nil
         }
 
@@ -570,6 +581,16 @@ actor CodexService {
         let type: String?
         let role: String?
         let content: [CodexContent]?
+        // Only populated on `event_msg` events (e.g. `task_started`). Codex
+        // Desktop's "import Claude Code web session" feature stamps every
+        // turn with `external-import-turn-<n>` — we use that as the
+        // bulk-import marker.
+        let turnId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, cwd, timestamp, source, type, role, content
+            case turnId = "turn_id"
+        }
     }
 
     private enum SessionSource: Decodable {
