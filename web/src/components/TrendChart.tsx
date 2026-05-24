@@ -75,9 +75,11 @@ const METRIC_ORDER: Metric[] = ['sessions', 'messages', 'active_hours', 'project
 
 interface Props {
   points: TrendPoint[];
+  /** When true, clicking a point in the chart navigates to that day's diary. */
+  linkable?: boolean;
 }
 
-export function TrendChart({ points }: Props) {
+export function TrendChart({ points, linkable = false }: Props) {
   const [metric, setMetric] = useState<Metric>('sessions');
   const def = METRICS[metric];
 
@@ -157,8 +159,29 @@ export function TrendChart({ points }: Props) {
           No data yet.
         </div>
       ) : (
-        <ChartContainer config={config} className="aspect-auto h-[200px] w-full">
-          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <ChartContainer
+          config={config}
+          className={cn(
+            'aspect-auto h-[200px] w-full',
+            linkable && '[&_.recharts-active-dot]:cursor-pointer',
+          )}
+        >
+          <AreaChart
+            data={data}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+            onClick={
+              linkable
+                ? (e) => {
+                    // Recharts passes the hovered datum as `activePayload`; the
+                    // X-axis value is on `activeLabel`. Navigate to that day's
+                    // diary page when the user has permission to open them.
+                    const date =
+                      (e as { activeLabel?: string } | undefined)?.activeLabel;
+                    if (date) window.location.href = `/${date}`;
+                  }
+                : undefined
+            }
+          >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={def.colorVar} stopOpacity={0.45} />
