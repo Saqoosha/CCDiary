@@ -126,9 +126,10 @@ function levelFor(sessions: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
-// Text color flips at level 3 — the OKLCH lightness of heat-3 (0.68) and
-// heat-4 (0.55) is dark enough that light text reads better than the
-// default foreground.
+// Only heat-4 (OKLCH lightness 0.55) is dark enough that the lighter
+// `text-background` actually clears WCAG AA against 11px digits;
+// heat-3 (L 0.68) is still mid-light, so we keep the dark foreground
+// there.
 const HEAT_BG = [
   'bg-heat-0',
   'bg-heat-1',
@@ -141,7 +142,7 @@ const HEAT_TEXT = [
   'text-foreground/80',
   'text-foreground',
   'text-foreground',
-  'text-background',
+  'text-foreground',
   'text-background',
 ] as const;
 

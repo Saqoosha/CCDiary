@@ -172,12 +172,14 @@ export function TrendChart({ points, linkable = false }: Props) {
             onClick={
               linkable
                 ? (e) => {
-                    // Recharts passes the hovered datum as `activePayload`; the
-                    // X-axis value is on `activeLabel`. Navigate to that day's
-                    // diary page when the user has permission to open them.
-                    const date =
-                      (e as { activeLabel?: string } | undefined)?.activeLabel;
-                    if (date) window.location.href = `/${date}`;
+                    // Recharts types `activeLabel` as `string | number`; our
+                    // X axis is the ISO date string, but defend the type so a
+                    // future recharts change can't turn this into `/123`.
+                    const date = (e as { activeLabel?: unknown } | undefined)
+                      ?.activeLabel;
+                    if (typeof date === 'string' && date) {
+                      window.location.href = `/${date}`;
+                    }
                   }
                 : undefined
             }
