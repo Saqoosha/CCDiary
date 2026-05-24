@@ -86,6 +86,19 @@ export function StatsOverview({ initial, showHeatmapTooltips = true }: Props) {
     return trendPoints.slice(-window);
   }, [trendPoints, range]);
 
+  // Per-day running streak length. Computed over the full trendPoints so
+  // the slice for the Active days card reflects an actual streak position
+  // (the first visible day might already be on day 42 of an ongoing run).
+  const activeDaysSpark = useMemo(() => {
+    let run = 0;
+    const series = trendPoints.map((p) => {
+      run = p.sessions > 0 ? run + 1 : 0;
+      return run;
+    });
+    const window = range === '7d' ? 7 : range === '30d' ? 30 : 60;
+    return series.slice(-window);
+  }, [trendPoints, range]);
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="px-6">
@@ -123,7 +136,12 @@ export function StatsOverview({ initial, showHeatmapTooltips = true }: Props) {
               spark={sparkSlice.map((p) => p.active_minutes / 60)}
               sparkColor="var(--chart-3)"
             />
-            <Stat label="Active days" card={data.cards.diaries} />
+            <Stat
+              label="Active days"
+              card={data.cards.diaries}
+              spark={activeDaysSpark}
+              sparkColor="var(--chart-5)"
+            />
             <Stat label="Current streak" card={data.cards.current_streak} />
             <Stat label="Longest streak" card={data.cards.longest_streak} />
             <Stat label="Peak hour" card={data.cards.peak_hour} />
@@ -131,7 +149,7 @@ export function StatsOverview({ initial, showHeatmapTooltips = true }: Props) {
           </div>
 
           <div className="mt-6">
-            <TrendChart points={trendPoints} />
+            <TrendChart points={trendPoints} linkable={showHeatmapTooltips} />
           </div>
 
           <div className="mt-6">

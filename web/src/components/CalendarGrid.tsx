@@ -80,12 +80,14 @@ function MonthBlock({
           const entry = entryMap.get(iso);
           const isFuture = iso > todayIso;
           const has = entry !== undefined;
+          const level = has ? levelFor(entry!.sessions) : 0;
           const cls = cn(
             'aspect-square flex items-center justify-center rounded-[5px] text-[11px] tabular-nums transition-colors',
             isFuture && 'text-muted-foreground/40',
             !isFuture && !has && 'text-muted-foreground/70 bg-muted/30',
-            has && 'bg-heat-2 text-foreground',
-            has && linkToDiaries && 'cursor-pointer hover:bg-heat-3',
+            has && HEAT_BG[level],
+            has && HEAT_TEXT[level],
+            has && linkToDiaries && 'cursor-pointer hover:brightness-95',
             has && !linkToDiaries && 'cursor-default',
             iso === todayIso && 'ring-2 ring-ring/40 ring-offset-1 ring-offset-card',
           );
@@ -114,6 +116,35 @@ function MonthBlock({
     </div>
   );
 }
+
+// Same buckets the HeatmapGrid above uses, so a day reads the same in both.
+function levelFor(sessions: number): 0 | 1 | 2 | 3 | 4 {
+  if (sessions <= 0) return 0;
+  if (sessions <= 2) return 1;
+  if (sessions <= 5) return 2;
+  if (sessions <= 10) return 3;
+  return 4;
+}
+
+// Only heat-4 (OKLCH lightness 0.55) is dark enough that the lighter
+// `text-background` actually clears WCAG AA against 11px digits;
+// heat-3 (L 0.68) is still mid-light, so we keep the dark foreground
+// there.
+const HEAT_BG = [
+  'bg-heat-0',
+  'bg-heat-1',
+  'bg-heat-2',
+  'bg-heat-3',
+  'bg-heat-4',
+] as const;
+
+const HEAT_TEXT = [
+  'text-foreground/80',
+  'text-foreground',
+  'text-foreground',
+  'text-foreground',
+  'text-background',
+] as const;
 
 function tooltipFor(entry: CalendarEntry): string {
   const parts = [`${entry.date}`, `${entry.sessions} sessions`, `${entry.messages} msgs`];

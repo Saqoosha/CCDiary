@@ -26,3 +26,7 @@ diaries/
 
 # Large icon source files
 Sources/CCDiary/AppIcon.icon/Assets/
+
+# Wrangler local state (D1 / KV caches, dev session)
+web/.wrangler/
+web/.dev.vars
