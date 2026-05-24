@@ -30,3 +30,6 @@ Sources/CCDiary/AppIcon.icon/Assets/
 # Wrangler local state (D1 / KV caches, dev session)
 web/.wrangler/
 web/.dev.vars
+
+# Defensive: any stray .wrangler/ regardless of dir
+.wrangler/
