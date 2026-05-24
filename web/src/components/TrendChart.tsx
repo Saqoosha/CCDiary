@@ -25,8 +25,12 @@ interface MetricDef {
   format: (v: number) => string;
 }
 
-const METRICS: MetricDef[] = [
-  {
+// Keyed by Metric so the lookup in the component is total — no
+// non-null assertion needed, and the compiler enforces that every key
+// in the Metric union has a definition (adding a new metric forces
+// filling this in).
+const METRICS: Record<Metric, MetricDef> = {
+  sessions: {
     key: 'sessions',
     label: 'Sessions',
     colorVar: 'var(--chart-1)',
@@ -34,7 +38,7 @@ const METRICS: MetricDef[] = [
     pick: (p) => p.sessions,
     format: (v) => v.toLocaleString(),
   },
-  {
+  messages: {
     key: 'messages',
     label: 'Messages',
     colorVar: 'var(--chart-2)',
@@ -42,9 +46,9 @@ const METRICS: MetricDef[] = [
     pick: (p) => p.messages,
     format: (v) => v.toLocaleString(),
   },
-  {
-    // Keep full precision in `pick` so summing 190 days doesn't drift; the
-    // formatter rounds only at display time, matching the card total.
+  // Keep full precision in `pick` so summing 190 days doesn't drift; the
+  // formatter rounds only at display time, matching the card total.
+  active_hours: {
     key: 'active_hours',
     label: 'Active hours',
     colorVar: 'var(--chart-3)',
@@ -52,18 +56,22 @@ const METRICS: MetricDef[] = [
     pick: (p) => p.active_minutes / 60,
     format: (v) => `${Math.round(v).toLocaleString()}h`,
   },
-  {
+  // Summing project_count across days double-counts a project active on
+  // many days. Show the per-day average instead — that's the number the
+  // headline can honestly claim.
+  project_count: {
     key: 'project_count',
-    // Summing project_count across days double-counts a project active on many
-    // days. Show the per-day average instead — that's the number the headline
-    // can honestly claim.
     label: 'Projects',
     colorVar: 'var(--chart-4)',
     summary: 'average',
     pick: (p) => p.project_count,
     format: (v) => v.toLocaleString(),
   },
-];
+};
+
+// Tab order is decoupled from the Record so the UI stays predictable
+// even though Record key order isn't part of the type.
+const METRIC_ORDER: Metric[] = ['sessions', 'messages', 'active_hours', 'project_count'];
 
 interface Props {
   points: TrendPoint[];
@@ -71,7 +79,7 @@ interface Props {
 
 export function TrendChart({ points }: Props) {
   const [metric, setMetric] = useState<Metric>('sessions');
-  const def = METRICS.find((m) => m.key === metric)!;
+  const def = METRICS[metric];
 
   const data = useMemo(
     () =>
@@ -122,7 +130,8 @@ export function TrendChart({ points }: Props) {
           </div>
         </div>
         <div className="inline-flex rounded-md bg-muted/60 p-0.5 text-xs">
-          {METRICS.map((m) => {
+          {METRIC_ORDER.map((key) => {
+            const m = METRICS[key];
             const selected = metric === m.key;
             return (
               <button

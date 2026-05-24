@@ -137,6 +137,13 @@ export function redactPublicStats(stats: StatsResponse): StatsResponse {
   };
 }
 
+/**
+ * Inclusive window: returns the UTC date `days - 1` ago, so `WHERE date >= ?`
+ * yields up to `days` rows ending today. The diary cron runs at 04:00 *for
+ * yesterday*, so today's row is normally absent — this matches the "last 30
+ * days" intent without an explicit upper bound. A manually-pushed same-day
+ * diary will still surface (intentional — the user pushed it).
+ */
 function rangeStart(range: '30d' | '7d'): string {
   const days = range === '30d' ? 30 : 7;
   const d = new Date();
