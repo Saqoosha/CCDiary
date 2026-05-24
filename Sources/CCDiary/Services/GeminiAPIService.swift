@@ -34,8 +34,9 @@ actor GeminiAPIService: AIAPIService {
                 ]
             ],
             "generationConfig": [
-                "maxOutputTokens": 8192,
-                "temperature": 0.7
+                "maxOutputTokens": 32768,
+                "temperature": 0.7,
+                "thinkingConfig": ["thinkingBudget": 0]
             ]
         ]
 
