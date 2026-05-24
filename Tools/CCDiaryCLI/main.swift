@@ -180,7 +180,7 @@ enum CCDiaryCLI {
     static func defaultModel(for provider: AIProvider) -> String {
         switch provider {
         case .claudeAPI: return "claude-haiku-4-5-20251101"
-        case .gemini:    return "gemini-2.5-flash"
+        case .gemini:    return "gemini-3.5-flash"
         case .openai:    return "gpt-5-mini"
         }
     }

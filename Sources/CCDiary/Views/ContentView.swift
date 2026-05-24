@@ -137,7 +137,7 @@ final class DiaryViewModel {
     // Stored properties that sync with UserDefaults
     var aiProvider: AIProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
     var apiModel: String = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
-    var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
+    var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-3.5-flash"
     var openAIModel: String = UserDefaults.standard.string(forKey: "openAIModel") ?? "gpt-5-mini"
     var diariesDirectoryPath: String = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
@@ -180,7 +180,7 @@ final class DiaryViewModel {
     private func refreshSettings() {
         let newProvider = AIProvider(rawValue: UserDefaults.standard.string(forKey: "aiProvider") ?? "") ?? .claudeAPI
         let newAPIModel = UserDefaults.standard.string(forKey: "claudeAPIModel") ?? "claude-haiku-4-5-20251101"
-        let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-2.5-flash"
+        let newGeminiModel = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-3.5-flash"
         let newOpenAIModel = UserDefaults.standard.string(forKey: "openAIModel") ?? "gpt-5-mini"
         let newPath = UserDefaults.standard.string(forKey: "diariesDirectory") ?? ""
 
