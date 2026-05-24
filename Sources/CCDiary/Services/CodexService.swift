@@ -392,12 +392,13 @@ actor CodexService {
 
             // Codex Desktop's bulk import of Claude Code web sessions stamps
             // task_started with `external-import-turn-*`. Those rollouts are
-            // not real local work — exclude the whole session.
+            // not real local work — exclude the whole session and stop
+            // scanning the rest of the file.
             if event.type == "event_msg",
                event.payload?.type == "task_started",
                event.payload?.turnId?.hasPrefix("external-import-") == true {
                 isExternalImport = true
-                continue
+                break
             }
 
             guard event.type == "response_item",
