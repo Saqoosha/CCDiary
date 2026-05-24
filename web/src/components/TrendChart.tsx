@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
   ChartContainer,
@@ -7,14 +7,9 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
+import type { HeatmapDay } from '@/lib/stats';
 
-export interface TrendPoint {
-  date: string;
-  sessions: number;
-  messages: number;
-  active_minutes: number;
-  project_count: number;
-}
+export type TrendPoint = HeatmapDay;
 
 type Metric = 'sessions' | 'messages' | 'active_hours' | 'project_count';
 
@@ -105,6 +100,8 @@ export function TrendChart({ points }: Props) {
     value: { label: def.label, color: def.colorVar },
   } satisfies ChartConfig;
 
+  const gradientId = `trend-fill-${useId().replace(/:/g, '')}`;
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -154,7 +151,7 @@ export function TrendChart({ points }: Props) {
         <ChartContainer config={config} className="aspect-auto h-[200px] w-full">
           <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={def.colorVar} stopOpacity={0.45} />
                 <stop offset="100%" stopColor={def.colorVar} stopOpacity={0.02} />
               </linearGradient>
@@ -192,7 +189,7 @@ export function TrendChart({ points }: Props) {
               type="monotone"
               stroke={def.colorVar}
               strokeWidth={2}
-              fill="url(#trend-fill)"
+              fill={`url(#${gradientId})`}
               activeDot={{ r: 4, strokeWidth: 0 }}
             />
           </AreaChart>

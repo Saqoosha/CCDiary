@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import type { HeatmapDay } from '@/lib/stats';
 import { HeatmapGrid } from './HeatmapGrid';
 import { Sparkline } from './Sparkline';
-import { TrendChart, type TrendPoint } from './TrendChart';
+import { TrendChart } from './TrendChart';
 
 type Range = 'all' | '30d' | '7d';
 
@@ -12,14 +13,6 @@ interface StatCard {
   value: string | number;
   unit?: string;
   label?: string;
-}
-
-interface HeatmapDay {
-  date: string;
-  sessions: number;
-  messages: number;
-  active_minutes: number;
-  project_count: number;
 }
 
 interface StatsResponse {
@@ -85,7 +78,7 @@ export function StatsOverview({ initial, showHeatmapTooltips = true }: Props) {
     return null;
   }, [range]);
 
-  const trendPoints: TrendPoint[] = data.heatmap;
+  const trendPoints = data.heatmap;
   const sparkSlice = useMemo(() => {
     // Sparklines hug the same time window as the selected range so the
     // headline number and the line tell the same story.
