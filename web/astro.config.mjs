@@ -22,6 +22,13 @@ export default defineConfig({
   output: 'server',
   adapter: cloudflare(),
   integrations: [react()],
+  // Astro 6 enables Origin-based CSRF on every form POST by default. Our
+  // own form on /login was being rejected before reaching the handler
+  // ("cross-site POST is prohibited"). The login itself is already
+  // password-gated, the ingest endpoints use bearer auth that a
+  // cross-origin form can't forge, and logout is idempotent — so the
+  // default check buys very little and breaks the only form we have.
+  security: { checkOrigin: false },
   vite: {
     plugins: [tailwindcss()],
     resolve: {
