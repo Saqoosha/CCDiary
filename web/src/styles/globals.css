@@ -31,6 +31,13 @@
   --heat-2: oklch(0.78 0.10 245);
   --heat-3: oklch(0.68 0.14 250);
   --heat-4: oklch(0.55 0.17 255);
+
+  /* Chart palette — used by recharts series via shadcn ChartContainer. */
+  --chart-1: oklch(0.62 0.18 255);   /* sessions — indigo */
+  --chart-2: oklch(0.68 0.16 195);   /* messages — teal */
+  --chart-3: oklch(0.72 0.17 60);    /* active hours — amber */
+  --chart-4: oklch(0.62 0.20 330);   /* projects — magenta */
+  --chart-5: oklch(0.65 0.16 145);   /* spare — green */
 }
 
 @theme inline {
@@ -61,6 +68,11 @@
   --color-heat-2: var(--heat-2);
   --color-heat-3: var(--heat-3);
   --color-heat-4: var(--heat-4);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 }
 
 @layer base {

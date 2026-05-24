@@ -29,6 +29,8 @@ export interface HeatmapDay {
   date: string;
   sessions: number;
   messages: number;
+  active_minutes: number;
+  project_count: number;
 }
 
 /**
@@ -42,6 +44,7 @@ export type StatsRow = Pick<
   | 'sessions'
   | 'messages'
   | 'active_minutes'
+  | 'project_count'
   | 'peak_hour'
   | 'top_project'
   | 'provider'
@@ -50,11 +53,11 @@ export type StatsRow = Pick<
 export async function loadStatsRows(db: D1Database, range: StatsRange): Promise<StatsRow[]> {
   const sql =
     range === 'all'
-      ? `SELECT date, markdown, sessions, messages, active_minutes,
+      ? `SELECT date, markdown, sessions, messages, active_minutes, project_count,
                 peak_hour, top_project, provider
          FROM diaries
          ORDER BY date ASC`
-      : `SELECT date, markdown, sessions, messages, active_minutes,
+      : `SELECT date, markdown, sessions, messages, active_minutes, project_count,
                 peak_hour, top_project, provider
          FROM diaries
          WHERE date >= ?
@@ -116,6 +119,8 @@ export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
       date: r.date,
       sessions: r.sessions,
       messages: r.messages,
+      active_minutes: r.active_minutes,
+      project_count: r.project_count,
     })),
     fun_fact: buildFunFact(totals.chars),
   };
