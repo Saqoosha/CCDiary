@@ -1,18 +1,23 @@
 import Foundation
+import os.log
 
 /// Service for storing and loading diary entries
 actor DiaryStorage {
     private let diariesDirectory: URL
     private static let legacyDirectoryName = "ccdiary"
     private static let newDirectoryName = "CCDiary"
+    private static let logger = Logger(subsystem: "CCDiary", category: "DiaryStorage")
 
     init() {
-        // Default to ~/Documents/CCDiary/ (macOS standard for user documents)
+        // Store under ~/Library/Application Support/CCDiary, *outside* the
+        // TCC-protected ~/Documents folder. This keeps the 4am LaunchAgent from
+        // ever triggering a "allow access to Documents" dialog that would stall
+        // the unattended run.
         let home = FileManager.default.homeDirectoryForCurrentUser
-        self.diariesDirectory = home.appendingPathComponent("Documents/\(Self.newDirectoryName)")
+        self.diariesDirectory = home.appendingPathComponent("Library/Application Support/\(Self.newDirectoryName)")
 
-        // Migrate from legacy directory if needed
-        Self.migrateFromLegacyDirectory()
+        // Migrate diaries from older ~/Documents locations if needed.
+        Self.migrateFromLegacyLocations(to: diariesDirectory)
         Self.migrateFromFlatLayout(in: diariesDirectory)
     }
 
@@ -21,34 +26,108 @@ actor DiaryStorage {
         Self.migrateFromFlatLayout(in: diariesDirectory)
     }
 
-    /// Migrate diaries from legacy ~/Documents/ccdiary to ~/Documents/CCDiary
-    private static func migrateFromLegacyDirectory() {
+    /// Migrate diaries from older ~/Documents locations into the current directory.
+    ///
+    /// Location history (oldest → newest):
+    ///   1. ~/Documents/ccdiary  (flat: YYYY-MM-DD.md at the root)
+    ///   2. ~/Documents/CCDiary  (nested: YYYY/MM/YYYY-MM-DD.md)
+    ///   3. ~/Library/Application Support/CCDiary  (current — outside TCC-protected Documents)
+    ///
+    /// Only date-named diary files (`YYYY-MM-DD.md` regular files) are *moved*, never
+    /// overwriting an existing destination — so unrelated Markdown (e.g. a stray
+    /// `README.md`) and `.md`-suffixed directories are left alone. Source #1 is flat and
+    /// source #2 is nested, so same-date files from the two sources land at different
+    /// paths and don't collide here; `migrateFromFlatLayout` then merges them, keeping
+    /// the newer by mtime. Empty legacy trees (including `.DS_Store`-only ones) are
+    /// cleaned up afterward. Every move is logged so a partial migration is diagnosable.
+    private static func migrateFromLegacyLocations(to newDir: URL) {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
-        let legacyDir = home.appendingPathComponent("Documents/\(legacyDirectoryName)")
-        let newDir = home.appendingPathComponent("Documents/\(newDirectoryName)")
+        let legacyDirs = [
+            home.appendingPathComponent("Documents/\(legacyDirectoryName)"),
+            home.appendingPathComponent("Documents/\(newDirectoryName)"),
+        ]
 
-        // Skip if legacy directory doesn't exist
-        guard fileManager.fileExists(atPath: legacyDir.path) else { return }
+        for legacyDir in legacyDirs {
+            guard fileManager.fileExists(atPath: legacyDir.path),
+                  legacyDir.resolvingSymlinksInPath() != newDir.resolvingSymlinksInPath() else { continue }
 
-        // Create new directory if needed
-        try? fileManager.createDirectory(at: newDir, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: newDir, withIntermediateDirectories: true)
+            } catch {
+                // If we can't create the destination, every move below would silently
+                // no-op and the app would read an empty store — abort loudly instead.
+                logger.error("migration: cannot create \(newDir.path, privacy: .public): \(error.localizedDescription, privacy: .public) — leaving \(legacyDir.path, privacy: .public) untouched")
+                continue
+            }
 
-        // Move all files from legacy to new directory
-        if let files = try? fileManager.contentsOfDirectory(at: legacyDir, includingPropertiesForKeys: nil) {
-            for file in files {
-                let destURL = newDir.appendingPathComponent(file.lastPathComponent)
-                // Only move if destination doesn't exist (don't overwrite newer files)
-                if !fileManager.fileExists(atPath: destURL.path) {
-                    try? fileManager.moveItem(at: file, to: destURL)
+            guard let enumerator = fileManager.enumerator(
+                at: legacyDir,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                logger.error("migration: cannot enumerate \(legacyDir.path, privacy: .public)")
+                continue
+            }
+
+            // Collect first, then move — never mutate the directory tree mid-enumeration
+            // (moving a file out from under a live enumerator is undefined behavior).
+            var moves: [(source: URL, destination: URL)] = []
+            for case let fileURL as URL in enumerator where fileURL.pathExtension == "md" {
+                let dateString = fileURL.deletingPathExtension().lastPathComponent
+                let isRegularFile = (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
+                guard isRegularFile, isDateString(dateString) else { continue }
+                // Preserve the relative sub-path (YYYY/MM/…) under the new directory.
+                let prefix = legacyDir.path + "/"
+                let relativePath = fileURL.path.hasPrefix(prefix)
+                    ? String(fileURL.path.dropFirst(prefix.count))
+                    : fileURL.lastPathComponent
+                moves.append((fileURL, newDir.appendingPathComponent(relativePath)))
+            }
+
+            var moved = 0, skipped = 0, failed = 0
+            for (source, destination) in moves {
+                guard !fileManager.fileExists(atPath: destination.path) else { skipped += 1; continue }
+                do {
+                    try fileManager.createDirectory(
+                        at: destination.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try fileManager.moveItem(at: source, to: destination)
+                    moved += 1
+                } catch {
+                    logger.error("migration: failed to move \(source.path, privacy: .public) -> \(destination.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    failed += 1
                 }
             }
-        }
 
-        // Remove legacy directory if empty
-        if let remaining = try? fileManager.contentsOfDirectory(at: legacyDir, includingPropertiesForKeys: nil),
-           remaining.isEmpty {
-            try? fileManager.removeItem(at: legacyDir)
+            if moved > 0 || failed > 0 {
+                logger.notice("migration from \(legacyDir.path, privacy: .public): moved \(moved) skipped \(skipped) failed \(failed)")
+            }
+
+            Self.removeEmptyDirectoryTree(at: legacyDir)
+        }
+    }
+
+    /// Recursively remove empty subdirectories, then the directory itself if nothing
+    /// but ignorable cruft (a stray `.DS_Store`) remains — so a Finder-touched legacy
+    /// folder still gets cleaned up. Best-effort: directories still holding a real file
+    /// are left untouched, so we never delete data out from under a non-diary file.
+    private static func removeEmptyDirectoryTree(at url: URL) {
+        let fileManager = FileManager.default
+        if let contents = try? fileManager.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: []
+        ) {
+            for item in contents {
+                let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                if isDir { removeEmptyDirectoryTree(at: item) }
+            }
+        }
+        if let remaining = try? fileManager.contentsOfDirectory(atPath: url.path),
+           remaining.allSatisfy({ $0 == ".DS_Store" }) {
+            try? fileManager.removeItem(at: url)
         }
     }
 

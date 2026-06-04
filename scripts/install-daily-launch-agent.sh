@@ -75,6 +75,38 @@ if [[ ! -x "${BIN_PATH}" ]]; then
     exit 1
 fi
 
+# Code-sign the CLI with a stable identity.
+#
+# The default Xcode build leaves ccdiary-cli ad-hoc signed. An ad-hoc signature's
+# code-signing requirement is CDHash-based, so it changes on EVERY rebuild — which
+# makes macOS treat the binary as a brand-new app and invalidates any TCC
+# (Full Disk Access) and Keychain grants it was previously given. That's what would
+# make the unattended 4am run pop a permission dialog (and stall) after a rebuild.
+#
+# Signing with a stable Developer ID identity gives the binary a constant
+# requirement, so TCC/Keychain grants survive rebuilds and Claude Code auto-updates.
+# Override the identity for forks/other machines via CCDIARY_SIGN_IDENTITY.
+SIGN_IDENTITY="${CCDIARY_SIGN_IDENTITY:-Developer ID Application: Whatever Co. (G5G54TCH8W)}"
+if security find-identity -v -p codesigning | grep -qF "${SIGN_IDENTITY}"; then
+    echo "==> Code-signing ccdiary-cli (${SIGN_IDENTITY})"
+    if ! codesign --force --sign "${SIGN_IDENTITY}" "${BIN_PATH}"; then
+        echo "ERROR: codesign failed for ${BIN_PATH} with identity '${SIGN_IDENTITY}'." >&2
+        echo "       Refusing to install an unsigned agent (TCC/Keychain grants would not persist)." >&2
+        exit 1
+    fi
+    codesign -dvv "${BIN_PATH}" 2>&1 | grep -E 'Authority=|TeamIdentifier=' | sed 's/^/    /'
+else
+    # Without a stable signature the binary stays ad-hoc, whose requirement changes
+    # every rebuild and resets TCC/Keychain grants — the unattended 04:00 run would
+    # then stall on a permission prompt. Refuse to install a setup that defeats the
+    # whole point of this agent rather than warning and continuing.
+    echo "ERROR: code-signing identity not found: ${SIGN_IDENTITY}" >&2
+    echo "       A stable signature is required so TCC/Keychain grants survive rebuilds." >&2
+    echo "       List identities with 'security find-identity -v -p codesigning' and set" >&2
+    echo "       CCDIARY_SIGN_IDENTITY to a Developer ID or a persistent self-signed cert." >&2
+    exit 1
+fi
+
 render_and_install() {
     local template="$1"
     local dest="$2"

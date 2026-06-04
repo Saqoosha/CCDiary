@@ -178,6 +178,30 @@ scripts/uninstall-daily-launch-agent.sh
 ./build/Build/Products/Release/ccdiary-cli generate --yesterday --slack-channel C0XXXXXXXXX
 ```
 
+### Unattended runs: storage location, code signing & TCC
+
+The 04:00 LaunchAgent runs headless — nothing can dismiss a permission dialog, so any
+TCC prompt would silently stall the run. Two things keep it dialog-free:
+
+- **Diaries live outside `~/Documents`.** `DiaryStorage` defaults to
+  `~/Library/Application Support/CCDiary` (not the TCC-protected Documents folder).
+  Older locations (`~/Documents/CCDiary`, then `~/Documents/ccdiary`) auto-migrate on
+  first run and their now-empty trees are removed. A custom path set in the GUI still wins.
+- **`ccdiary-cli` is signed with a stable Developer ID.** The plain Xcode build is
+  ad-hoc signed, whose Designated Requirement is CDHash-based and changes on every
+  rebuild — that invalidates TCC (Full Disk Access) and Keychain grants, so a rebuild
+  (e.g. triggered after a Claude Code auto-update) would re-trigger prompts.
+  `install-daily-launch-agent.sh` re-signs with `Developer ID Application: Whatever Co.
+  (G5G54TCH8W)` so the requirement stays constant across rebuilds. Override via
+  `CCDIARY_SIGN_IDENTITY`; forks without a Developer ID can use any persistent
+  self-signed code-signing certificate.
+
+Full Disk Access is **not** required now that Documents is avoided. If you ever do hit a
+TCC prompt (a future feature reading a protected location), grant it once via
+System Settings → Privacy & Security → Full Disk Access (drag in the `ccdiary-cli`
+binary). Because the signature is now stable, that grant persists across rebuilds —
+with ad-hoc signing it reset every time.
+
 ### Secrets resolution (env → file → Keychain)
 
 `ccdiary-cli` resolves every secret in this order: process env, then a file at
