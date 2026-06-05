@@ -16,8 +16,12 @@ actor DiaryStorage {
         let home = FileManager.default.homeDirectoryForCurrentUser
         self.diariesDirectory = home.appendingPathComponent("Library/Application Support/\(Self.newDirectoryName)")
 
-        // Migrate diaries from older ~/Documents locations if needed.
-        Self.migrateFromLegacyLocations(to: diariesDirectory)
+        // Migrate diaries from older ~/Documents locations once. Guarded by a marker
+        // so we never probe ~/Documents again — even a `fileExists` on a Documents
+        // subpath trips the TCC "access your Documents folder" prompt, which would
+        // stall the headless 04:00 agent. The whole point of this storage move is to
+        // stay out of Documents, so the probe must be one-and-done.
+        Self.migrateFromLegacyLocationsIfNeeded(to: diariesDirectory)
         Self.migrateFromFlatLayout(in: diariesDirectory)
     }
 
@@ -40,6 +44,47 @@ actor DiaryStorage {
     /// paths and don't collide here; `migrateFromFlatLayout` then merges them, keeping
     /// the newer by mtime. Empty legacy trees (including `.DS_Store`-only ones) are
     /// cleaned up afterward. Every move is logged so a partial migration is diagnosable.
+    /// Marker file (inside the TCC-free Application Support dir) recording that the
+    /// one-time `~/Documents` migration has already run. Once it exists, we skip the
+    /// migration entirely and never touch `~/Documents` again — so a headless run
+    /// can't trip a TCC permission prompt. Probing `~/Documents` (even `fileExists`)
+    /// is exactly what we must avoid on every launch after the first.
+    private static let migrationMarkerName = ".legacy-migration-done"
+
+    private static func migrateFromLegacyLocationsIfNeeded(to newDir: URL) {
+        let fileManager = FileManager.default
+        let marker = newDir.appendingPathComponent(migrationMarkerName)
+        guard !fileManager.fileExists(atPath: marker.path) else { return }
+
+        migrateFromLegacyLocations(to: newDir)
+
+        // Record completion so subsequent launches never probe ~/Documents again.
+        // newDir lives under Application Support (TCC-free); creating it and the
+        // marker here is safe even when no diaries were migrated.
+        //
+        // We write the marker even if the migration above was only partial (some
+        // moveItem calls failed, or ~/Documents couldn't be enumerated at all).
+        // This is deliberate, not an oversight: gating the marker on full success
+        // would mean a Mac that permanently denies ~/Documents access — exactly the
+        // headless-TCC case this guard exists for — never writes the marker, re-probes
+        // ~/Documents on every launch, and re-arms the very prompt that stalls the
+        // 04:00 run. The cost is bounded: moveItem is non-destructive, so any file
+        // that failed to migrate stays put in ~/Documents (never lost) and each
+        // failure is logged per-file in migrateFromLegacyLocations for manual recovery.
+        //
+        // If the marker itself can't be written we surface it: without it every launch
+        // re-probes ~/Documents, so a silent failure here would defeat the whole guard.
+        do {
+            try fileManager.createDirectory(at: newDir, withIntermediateDirectories: true)
+        } catch {
+            logger.error("migration: cannot create \(newDir.path, privacy: .public) for marker: \(error.localizedDescription, privacy: .public) — ~/Documents will be probed again next launch (TCC prompt risk)")
+            return
+        }
+        if !fileManager.createFile(atPath: marker.path, contents: nil) {
+            logger.error("migration: failed to write marker at \(marker.path, privacy: .public) — ~/Documents will be probed again next launch (TCC prompt risk)")
+        }
+    }
+
     private static func migrateFromLegacyLocations(to newDir: URL) {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser

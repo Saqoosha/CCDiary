@@ -20,7 +20,6 @@
         <string>@CCDIARY_BIN@</string>
         <string>generate</string>
         <string>--yesterday</string>
-        <string>--skip-existing</string>
         <string>--provider</string>
         <string>gemini</string>
         <string>--merge-cloud-stats</string>
