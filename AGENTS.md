@@ -109,6 +109,36 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
   - `SlackService` - Posts generated diaries to Slack
   - `CloudIngestService` - Pushes diaries (with stats) to the Cloudflare Worker at [`web/`](web/)
 
+### Automated session exclusion
+
+Claude Code sessions launched by background automation are excluded from
+diaries, statistics, and the calendar — they are not the user's own activity.
+Detection probes the first 128 KB of a session JSONL for either marker
+(neither subsumes the other):
+
+- **Scheduled tasks / cron routines** (idea ported from Canopy): a
+  `queue-operation` line with `operation == "enqueue"` whose `content` embeds
+  `<scheduled-task ...>`. Their `entrypoint` is the spawning app
+  (e.g. `claude-desktop`), so the entrypoint check alone can't catch them.
+- **Headless SDK / `claude -p` runs**: top-level `entrypoint == "sdk-cli"`
+  (interactive sessions are `claude-vscode` / `claude-desktop` / `cli`) **and**
+  at most one distinct user prompt in the whole file. The prompt-count guard
+  matters: some surfaces (e.g. managed agents driven from another device)
+  report `sdk-cli` while a human is genuinely conversing — observed bots all
+  send exactly one templated prompt, humans send several.
+
+Both checks are confirmed by per-line JSON decode so sessions merely
+*mentioning* a marker don't false-positive. Subagent transcripts
+(`<project>/<sessionId>/subagents/agent-*.jsonl`) inherit the verdict of their
+parent session file. The filter is unconditional and lives in
+`ConversationService` (`isAutomatedSessionFile` / `filterAutomatedSessionFiles`),
+applied at all three JSONL discovery sites: `buildFullDateIndex` (automated
+files are indexed with an empty date set — so **changing detection logic
+requires bumping the date-index version**), `findConversationFiles`, and
+`findConversationFilesForDateRange`. Note: cached statistics computed before
+this feature still include automated sessions; clear
+`~/Library/Caches/CCDiary/statistics/` to recompute.
+
 ## Performance Optimizations
 
 ### Diary Generation (aggregateForDate)
@@ -141,7 +171,7 @@ Multiple optimizations reduce diary generation time from ~14s to ~2s:
 
 ### Caches
 
-- **Date Index** (`~/Library/Caches/CCDiary/date_index_v2.json`): Maps dates to files containing that date
+- **Date Index** (`~/Library/Caches/CCDiary/date_index_v3.json`): Maps dates to files containing that date (v3: automated sessions excluded)
 - **Statistics Cache** (`~/Library/Caches/CCDiary/statistics/`): Cached stats for past dates
 
 ## Benchmark Tool

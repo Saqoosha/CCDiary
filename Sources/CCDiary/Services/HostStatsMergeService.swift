@@ -2,24 +2,54 @@ import Foundation
 
 enum HostStatsMergeService {
     /// Merge remote digest payloads into local DailyActivity.
+    ///
+    /// `excludeProjectSubstrings` is applied to remote digest projects too:
+    /// remote hosts may push stats from older binaries (or run automation of
+    /// their own), and a name/path filter is the only lever the merging side
+    /// has — the source JSONL files live on the remote Mac.
     static func mergeDailyActivity(
         local: DailyActivity,
         remoteDigests: [DigestPayload],
-        remoteHosts: [String]
+        remoteHosts: [String],
+        excludeProjectSubstrings: [String] = []
     ) -> DailyActivity {
         var allProjects = local.projects
+        var remoteInputs = 0
 
         for (index, digest) in remoteDigests.enumerated() {
             let host = index < remoteHosts.count ? remoteHosts[index] : "remote"
-            for digestProject in digest.projects {
-                var project = digestProject.toProjectActivity()
+            var includedProjects: [DigestProject] = []
+            var droppedInputs = 0
+            for project in digest.projects {
+                if isExcluded(project, substrings: excludeProjectSubstrings) {
+                    droppedInputs += project.conversations.filter { $0.role == "user" }.count
+                } else {
+                    includedProjects.append(project)
+                }
+            }
+            // Digest conversations are the used (possibly truncated) subset,
+            // so subtracting them is a best-effort adjustment that keeps the
+            // input total close to the projects actually shown.
+            remoteInputs += max(0, digest.totalInputs - droppedInputs)
+            for digestProject in includedProjects {
+                let project = digestProject.toProjectActivity()
 
                 // Tag project name with host origin to distinguish sources.
                 let taggedName = "\(project.name) [from \(host)]"
 
-                // Check if same project exists locally (same path + source).
-                if let existingIdx = allProjects.firstIndex(where: {
-                    $0.path == project.path && $0.source == project.source
+                // Match by path, or by normalized name when the same project
+                // lives at a different path on the remote Mac (different
+                // checkout location or username). Source must always match.
+                // Name matching could in principle conflate two distinct
+                // repos sharing a name across Macs — accepted tradeoff: for
+                // one user's Macs a wrongly split section is the common
+                // failure, a name collision the rare one.
+                let baseName = DiaryPromptBuilder.sectionName(for: project.name)
+                if let existingIdx = allProjects.firstIndex(where: { existing in
+                    guard existing.source == project.source else { return false }
+                    return existing.path == project.path ||
+                        DiaryPromptBuilder.sectionName(for: existing.name)
+                            .caseInsensitiveCompare(baseName) == .orderedSame
                 }) {
                     // Merge: interleave conversations by timestamp, deduplicated by (timestamp, role, content).
                     let existing = allProjects[existingIdx]
@@ -46,9 +76,11 @@ enum HostStatsMergeService {
                         usedChars: existing.stats.usedChars + project.stats.usedChars,
                         truncatedCount: existing.stats.truncatedCount + project.stats.truncatedCount
                     )
+                    // Keep the plain name — "A + A [from host]" concatenation
+                    // leaked host tags into diary section headings.
                     var merged = ProjectActivity(
                         path: existing.path,
-                        name: "\(existing.name) + \(taggedName)",
+                        name: DiaryPromptBuilder.sectionName(for: existing.name),
                         userInputs: mergedInputs,
                         conversations: mergedConversations,
                         timeRange: mergedRange,
@@ -76,17 +108,28 @@ enum HostStatsMergeService {
         return DailyActivity(
             date: local.date,
             projects: allProjects,
-            totalInputs: local.totalInputs + remoteDigests.reduce(0) { $0 + $1.totalInputs }
+            totalInputs: local.totalInputs + remoteInputs
         )
     }
 
-    /// Merge multiple DayStatistics into one.
+    private static func isExcluded(_ project: DigestProject, substrings: [String]) -> Bool {
+        substrings.contains { sub in
+            project.path.localizedCaseInsensitiveContains(sub) ||
+                project.name.localizedCaseInsensitiveContains(sub)
+        }
+    }
+
+    /// Merge multiple DayStatistics into one. Remote projects matching
+    /// `excludeProjectSubstrings` are dropped before merging so older remote
+    /// binaries can't reinject excluded projects into the cloud stats.
     static func mergeDayStatistics(
         local: DayStatistics,
-        remotes: [DayStatistics]
+        remotes: [DayStatistics],
+        excludeProjectSubstrings: [String] = []
     ) -> DayStatistics {
         var merged = local
-        for remote in remotes {
+        for rawRemote in remotes {
+            let remote = filterExcludedProjects(rawRemote, substrings: excludeProjectSubstrings)
             merged = DayStatistics(
                 date: merged.date,
                 ccProjectCount: merged.ccProjectCount + remote.ccProjectCount,
@@ -102,6 +145,50 @@ enum HostStatsMergeService {
             )
         }
         return merged
+    }
+
+    /// Drop excluded projects from a remote DayStatistics and adjust the
+    /// per-source counters. Message and project counts adjust exactly from
+    /// the dropped summaries; session counts adjust by one per dropped
+    /// project — a lower bound, since per-project session counts aren't
+    /// carried in ProjectSummary.
+    private static func filterExcludedProjects(
+        _ stats: DayStatistics,
+        substrings: [String]
+    ) -> DayStatistics {
+        guard !substrings.isEmpty else { return stats }
+
+        var kept: [ProjectSummary] = []
+        var droppedProjects: [ActivitySource: Int] = [:]
+        var droppedMessages: [ActivitySource: Int] = [:]
+        for project in stats.projects {
+            let excluded = substrings.contains { sub in
+                project.path.localizedCaseInsensitiveContains(sub) ||
+                    project.name.localizedCaseInsensitiveContains(sub)
+            }
+            if excluded {
+                droppedProjects[project.source, default: 0] += 1
+                droppedMessages[project.source, default: 0] += project.messageCount
+            } else {
+                kept.append(project)
+            }
+        }
+        guard kept.count != stats.projects.count else { return stats }
+
+        func adjusted(_ count: Int, minus dropped: Int) -> Int { max(0, count - dropped) }
+        return DayStatistics(
+            date: stats.date,
+            ccProjectCount: adjusted(stats.ccProjectCount, minus: droppedProjects[.claudeCode] ?? 0),
+            ccSessionCount: adjusted(stats.ccSessionCount, minus: droppedProjects[.claudeCode] ?? 0),
+            ccMessageCount: adjusted(stats.ccMessageCount, minus: droppedMessages[.claudeCode] ?? 0),
+            cursorProjectCount: adjusted(stats.cursorProjectCount, minus: droppedProjects[.cursor] ?? 0),
+            cursorSessionCount: adjusted(stats.cursorSessionCount, minus: droppedProjects[.cursor] ?? 0),
+            cursorMessageCount: adjusted(stats.cursorMessageCount, minus: droppedMessages[.cursor] ?? 0),
+            codexProjectCount: adjusted(stats.codexProjectCount, minus: droppedProjects[.codex] ?? 0),
+            codexSessionCount: adjusted(stats.codexSessionCount, minus: droppedProjects[.codex] ?? 0),
+            codexMessageCount: adjusted(stats.codexMessageCount, minus: droppedMessages[.codex] ?? 0),
+            projects: kept
+        )
     }
 
     private static func mergeProjectSummaries(

@@ -82,7 +82,8 @@ enum CCDiaryCLI {
                     activity = HostStatsMergeService.mergeDailyActivity(
                         local: activity,
                         remoteDigests: remoteDigests,
-                        remoteHosts: remoteHosts
+                        remoteHosts: remoteHosts,
+                        excludeProjectSubstrings: options.excludeProjectSubstrings
                     )
                     print("Merged stats from \(otherHosts.count) remote host(s): \(remoteHosts.joined(separator: ", "))")
                 }
@@ -141,7 +142,8 @@ enum CCDiaryCLI {
             if options.mergeCloudStats, !remoteStatsForCloud.isEmpty, let localStats = stats {
                 stats = HostStatsMergeService.mergeDayStatistics(
                     local: localStats,
-                    remotes: remoteStatsForCloud
+                    remotes: remoteStatsForCloud,
+                    excludeProjectSubstrings: options.excludeProjectSubstrings
                 )
             }
             let result = try await postToCloud(
@@ -170,11 +172,45 @@ enum CCDiaryCLI {
         case .openai:    service = OpenAIAPIService()
         }
 
-        return try await service.generateDiary(
-            activity: activity,
-            apiKey: apiKey,
-            model: options.model ?? defaultModel(for: provider)
-        )
+        let model = options.model ?? defaultModel(for: provider)
+
+        // The model sometimes drops a project or splits one into duplicate
+        // headings despite the prompt mandating full coverage; resample until
+        // every project has a section and no heading repeats. An incomplete
+        // diary still beats none, so after the last attempt the best-effort
+        // result is used with a warning instead of failing the (possibly
+        // unattended) run.
+        let maxAttempts = 3
+        var content = try await service.generateDiary(activity: activity, apiKey: apiKey, model: model)
+        for attempt in 1...maxAttempts {
+            let missing = DiaryPromptBuilder.missingProjectSections(in: content.rawMarkdown, activity: activity)
+            let duplicated = DiaryPromptBuilder.duplicatedSections(in: content.rawMarkdown)
+            if missing.isEmpty && duplicated.isEmpty {
+                return content
+            }
+            var problems: [String] = []
+            if !missing.isEmpty {
+                problems.append("missing section(s): \(missing.joined(separator: ", "))")
+            }
+            if !duplicated.isEmpty {
+                problems.append("duplicated section(s): \(duplicated.joined(separator: ", "))")
+            }
+            let summary = problems.joined(separator: "; ")
+            guard attempt < maxAttempts else {
+                fputs("Warning: diary still has \(summary) after \(maxAttempts) attempts. Using best-effort result.\n", stderr)
+                break
+            }
+            fputs("Warning: diary attempt \(attempt) has \(summary). Regenerating...\n", stderr)
+            do {
+                content = try await service.generateDiary(activity: activity, apiKey: apiKey, model: model)
+            } catch {
+                // A transient API failure must not throw away the best-effort
+                // result we already have.
+                fputs("Warning: regeneration failed (\(error.localizedDescription)). Using best-effort result.\n", stderr)
+                break
+            }
+        }
+        return content
     }
 
     static func defaultModel(for provider: AIProvider) -> String {

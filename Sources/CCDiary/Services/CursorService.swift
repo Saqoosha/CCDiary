@@ -29,14 +29,18 @@ private actor CursorBubbleIndex {
     private static var cacheFileURL: URL {
         let fileManager = FileManager.default
         let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cacheDir = cachesDir.appendingPathComponent("CCDiary")
 
-        // Remove legacy cache directory
+        // Remove the legacy lowercase cache directory — but only when it is
+        // truly a separate directory. On case-insensitive APFS (the default)
+        // "ccdiary" resolves to "CCDiary" itself, and deleting it would nuke
+        // every cache (date index, statistics) on every single run.
         let legacyDir = cachesDir.appendingPathComponent("ccdiary")
-        if fileManager.fileExists(atPath: legacyDir.path) {
+        if let legacyCanonical = try? legacyDir.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath,
+           legacyCanonical != ((try? cacheDir.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath) ?? cacheDir.path) {
             try? fileManager.removeItem(at: legacyDir)
         }
 
-        let cacheDir = cachesDir.appendingPathComponent("CCDiary")
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         return cacheDir.appendingPathComponent("cursor_bubble_index_v1.json")
     }
