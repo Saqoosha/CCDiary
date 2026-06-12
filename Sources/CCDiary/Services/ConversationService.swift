@@ -22,7 +22,8 @@ private actor DateIndex {
         let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
             .appendingPathComponent("CCDiary")
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        return cacheDir.appendingPathComponent("date_index_v2.json")
+        // v3: automated (scheduled-task) sessions are excluded from the index.
+        return cacheDir.appendingPathComponent("date_index_v3.json")
     }
 
     /// Get files that contain entries for a specific date
@@ -66,8 +67,9 @@ private actor DateIndex {
 
     func saveToDiskIfNeeded() {
         guard isDirty else { return }
-        saveToDisk()
-        isDirty = false
+        if saveToDisk() {
+            isDirty = false
+        }
     }
 
     private func ensureLoaded() {
@@ -96,7 +98,9 @@ private actor DateIndex {
         logger.info("Loaded date index: \(stored.files.count) files, \(dateCount) dates")
     }
 
-    private func saveToDisk() {
+    /// Returns true on success so the caller keeps `isDirty` set after a
+    /// failed write and the next save attempt isn't silently skipped.
+    private func saveToDisk() -> Bool {
         var files: [StoredFileEntry] = []
         for (path, dates) in fileToDates {
             if let modTime = fileModTimes[path] {
@@ -108,9 +112,14 @@ private actor DateIndex {
             }
         }
         let stored = StoredDateIndex(files: files)
-        if let data = try? JSONEncoder().encode(stored) {
-            try? data.write(to: Self.cacheFileURL)
-            logger.info("Saved date index: \(files.count) files")
+        do {
+            let data = try JSONEncoder().encode(stored)
+            try data.write(to: Self.cacheFileURL)
+            logger.notice("Saved date index: \(files.count) files")
+            return true
+        } catch {
+            logger.error("Failed to save date index: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -154,6 +163,149 @@ actor ConversationService {
         let matchingPaths = filePaths.intersection(projectFilePaths)
 
         return matchingPaths.compactMap { URL(fileURLWithPath: $0) }
+    }
+
+    // MARK: - Automated session detection
+
+    /// Bytes scanned from the head of a session file when probing for the
+    /// background-automation marker; the queue-operation enqueue line appears
+    /// within the first few lines of scheduled sessions, but can land after
+    /// the first user message, so scan a generous window.
+    private static let automationProbeLength = 131_072
+
+    /// Minimal decode of a session line for automation probing.
+    private struct AutomationProbe: Decodable {
+        let type: String?
+        let operation: String?
+        let content: String?
+        let entrypoint: String?
+    }
+
+    /// True when the session was launched by background automation rather
+    /// than an interactive user. Two markers, both required because neither
+    /// subsumes the other:
+    /// - Scheduled tasks / cron routines log a `queue-operation` enqueue whose
+    ///   `content` embeds a `<scheduled-task ...>` block (their `entrypoint`
+    ///   is the spawning app, e.g. `claude-desktop`).
+    /// - Headless SDK / `claude -p` runs carry `entrypoint == "sdk-cli"`.
+    /// Subagent transcripts carry no marker of their own, so they inherit the
+    /// verdict of their parent session file.
+    nonisolated static func isAutomatedSessionFile(_ fileURL: URL) -> Bool {
+        isAutomatedSession(atPath: automationProbeTarget(for: fileURL).path)
+    }
+
+    /// Drop session files (and their subagent transcripts) that belong to
+    /// background-automated sessions. Probes each distinct session file once.
+    nonisolated static func filterAutomatedSessionFiles(_ files: [URL]) -> [URL] {
+        var verdicts: [String: Bool] = [:]
+        let kept = files.filter { file in
+            let target = automationProbeTarget(for: file)
+            if let cached = verdicts[target.path] { return !cached }
+            let automated = isAutomatedSession(atPath: target.path)
+            verdicts[target.path] = automated
+            return !automated
+        }
+        let dropped = files.count - kept.count
+        if dropped > 0 {
+            logger.notice("Skipped \(dropped) automated session file(s)")
+        }
+        return kept
+    }
+
+    /// Resolve the file whose head should be probed: subagent transcripts live
+    /// at `<project>/<sessionId>/subagents/agent-*.jsonl`, so probe the parent
+    /// `<sessionId>.jsonl` instead.
+    private nonisolated static func automationProbeTarget(for fileURL: URL) -> URL {
+        let dir = fileURL.deletingLastPathComponent()
+        guard dir.lastPathComponent == "subagents" else { return fileURL }
+        let sessionDir = dir.deletingLastPathComponent()
+        let parent = sessionDir.deletingLastPathComponent()
+            .appendingPathComponent(sessionDir.lastPathComponent + ".jsonl")
+        return FileManager.default.fileExists(atPath: parent.path) ? parent : fileURL
+    }
+
+    private nonisolated static func isAutomatedSession(atPath path: String) -> Bool {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: automationProbeLength), !data.isEmpty else {
+            return false
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        guard text.contains("<scheduled-task") || text.contains("\"entrypoint\"") else {
+            return false
+        }
+
+        // Confirm structurally so a conversation merely *mentioning* a marker
+        // (e.g. discussing this feature, or pasting JSONL) doesn't
+        // false-positive. Conversation entry lines carry the session's own
+        // top-level `entrypoint` on current Claude Code versions —
+        // housekeeping lines and older files may not, in which case the
+        // probe stays unresolved and the session counts as interactive
+        // (conservative). Only a real queue-operation line has top-level
+        // `operation` alongside `content`.
+        let decoder = JSONDecoder()
+        var entrypointResolved = false
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            let hasMarker = line.contains("<scheduled-task")
+            let checkEntrypoint = !entrypointResolved && line.contains("\"entrypoint\"")
+            guard hasMarker || checkEntrypoint else { continue }
+            guard let probe = try? decoder.decode(AutomationProbe.self, from: Data(line.utf8)) else {
+                continue
+            }
+            if hasMarker,
+               probe.type == "queue-operation",
+               probe.operation == "enqueue",
+               probe.content?.contains("<scheduled-task") == true {
+                return true
+            }
+            if checkEntrypoint, let entrypoint = probe.entrypoint {
+                if entrypoint == "sdk-cli" {
+                    // Headless SDK runs are usually single-shot bots, but some
+                    // surfaces (e.g. managed agents driven from another
+                    // device) also report sdk-cli while a human converses.
+                    // Distinguish by conversation breadth: bots send one
+                    // (often templated) prompt; humans send several.
+                    return !hasMultipleDistinctUserPrompts(atPath: path)
+                }
+                // Interactive entrypoint — settled; keep scanning only for
+                // the scheduled-task marker (it can appear later in the head).
+                entrypointResolved = true
+            }
+        }
+        return false
+    }
+
+    /// True when the session contains at least two distinct human-typed
+    /// prompts. Reads the whole file (user turns can sit megabytes past the
+    /// probe window); sdk-cli sessions are numerous but tend to be tiny, so
+    /// the full read stays cheap and the early exit on the second prompt
+    /// saves only decode work.
+    private nonisolated static func hasMultipleDistinctUserPrompts(atPath path: String) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path) else {
+            // Unknown → treat as human so a read failure can't silently
+            // exclude a real session (fail-open, like the head probe).
+            logger.error("Automation probe failed to read \(path, privacy: .public); keeping session")
+            return true
+        }
+        // Lossy decode to match the head probe — a single bad byte must not
+        // flip the verdict to automated.
+        let text = String(decoding: data, as: UTF8.self)
+        let decoder = JSONDecoder()
+        var seen: Set<String> = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard line.contains("\"type\":\"user\"") else { continue }
+            guard let entry = try? decoder.decode(LightEntry.self, from: Data(line.utf8)),
+                  entry.isValid,
+                  let prompt = entry.message?.content.textContent?
+                      .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !prompt.isEmpty,
+                  !prompt.hasPrefix("<"),        // command/meta XML payloads
+                  !prompt.hasPrefix("[Request")  // interruption placeholders
+            else { continue }
+            seen.insert(String(prompt.prefix(200)))
+            if seen.count >= 2 { return true }
+        }
+        return false
     }
 
     /// Extract all unique dates from a file (YYYY-MM-DD format)
@@ -233,7 +385,9 @@ actor ConversationService {
         await withTaskGroup(of: (String, TimeInterval, Set<String>)?.self) { group in
             for (file, modTime) in filesToIndex {
                 group.addTask {
-                    let dates = Self.extractDatesFromFile(file)
+                    // Automated sessions are indexed with no dates so they're
+                    // excluded from lookups but not re-probed until they change.
+                    let dates = Self.isAutomatedSessionFile(file) ? [] : Self.extractDatesFromFile(file)
                     return (file.path, modTime, dates)
                 }
             }
@@ -267,7 +421,7 @@ actor ConversationService {
             return []
         }
 
-        return try Self.findJSONLFiles(in: projectDir)
+        return Self.filterAutomatedSessionFiles(try Self.findJSONLFiles(in: projectDir))
     }
 
     /// Discover Claude Code conversation files that contain activity in a date range.
@@ -284,7 +438,7 @@ actor ConversationService {
         var result: [String: [URL]] = [:]
 
         for dir in projectDirs where dir.hasDirectoryPath {
-            let files = (try? Self.findJSONLFiles(in: dir)) ?? []
+            let files = Self.filterAutomatedSessionFiles((try? Self.findJSONLFiles(in: dir)) ?? [])
             let matchingFiles = files.filter { Self.fileContainsAnyDatePrefix($0, datePrefixes: datePrefixes) }
             guard !matchingFiles.isEmpty else { continue }
 
