@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 
 enum CCDiaryCLI {
     static func main() async {
@@ -72,7 +73,8 @@ enum CCDiaryCLI {
             }
             if let result = fetchResult, !result.hosts.isEmpty {
                 let localHost = resolveLocalHost()
-                let otherHosts = result.hosts.filter { $0.host != localHost }
+                let localKey = normalizedHostKey(localHost)
+                let otherHosts = result.hosts.filter { normalizedHostKey($0.host) != localKey }
                 if otherHosts.isEmpty {
                     print("Remote host stats found but all are from local host (\(localHost)) — using local activity only.")
                 } else {
@@ -307,9 +309,30 @@ enum CCDiaryCLI {
     }
 
     private static func resolveLocalHost() -> String {
-        ProcessInfo.processInfo.environment["CCDIARY_HOST_NAME"]
-            ?? Host.current().localizedName
-            ?? "unknown"
+        defaultHostName()
+    }
+
+    /// Stable machine identity for host-stats. Prefers CCDIARY_HOST_NAME
+    /// (set by the LaunchAgents), then the Bonjour local host name
+    /// ("Saqoosha-Mac-Studio") which matches what the agents configure, then
+    /// the user-facing computer name. Without the Bonjour fallback, manual
+    /// runs resolved "Saqoosha Mac Studio" and treated this machine's own
+    /// cloud digest as a remote host — double-counting every project.
+    static func defaultHostName() -> String {
+        if let env = ProcessInfo.processInfo.environment["CCDIARY_HOST_NAME"], !env.isEmpty {
+            return env
+        }
+        if let local = SCDynamicStoreCopyLocalHostName(nil) as String?, !local.isEmpty {
+            return local
+        }
+        return Host.current().localizedName ?? "unknown"
+    }
+
+    /// Compare host names ignoring case and punctuation so "Saqoosha's MBP"
+    /// (computer name) and "Saqooshas-MBP" (configured name) identify the
+    /// same machine.
+    static func normalizedHostKey(_ name: String) -> String {
+        name.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     /// Fetch host-stats from the cloud endpoint. Returns nil on any error
@@ -927,7 +950,7 @@ struct PushStatsOptions {
     endpoint so the primary Mac can merge them during diary generation. Should run
     on every Mac in the fleet (typically via LaunchAgent at 04:00).
 
-    --host respects CCDIARY_HOST_NAME env var, falling back to the machine's localized hostname.
+    --host respects CCDIARY_HOST_NAME env var, falling back to the Bonjour local host name, then the computer name.
 
     Secret resolution order (per key): process env → secrets file → Keychain.
 
@@ -943,9 +966,7 @@ struct PushStatsOptions {
         }
 
         var date = Self.yesterday()
-        var host = ProcessInfo.processInfo.environment["CCDIARY_HOST_NAME"]
-                   ?? Host.current().localizedName
-                   ?? "unknown"
+        var host = CCDiaryCLI.defaultHostName()
         var endpoint: String?
         var maxContentLength = 10_000
         var maxMessagesPerProject = 1_000
