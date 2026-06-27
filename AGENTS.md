@@ -139,6 +139,32 @@ requires bumping the date-index version**), `findConversationFiles`, and
 this feature still include automated sessions; clear
 `~/Library/Caches/CCDiary/statistics/` to recompute.
 
+#### Substring exclusion (escape hatch)
+
+Some automated sources don't hit either marker but still surface in the
+aggregator as zero-message phantom projects. `AggregateOptions.excludeProjectSubstrings`
+drops any project whose path **or** name contains one of the configured
+substrings (case-insensitive). The CLI exposes this via `--exclude-project NAME`
+(repeatable) and always merges in the always-on defaults from
+`CLIOptions.defaultExcludeSubstrings` in [Tools/CCDiaryCLI/main.swift](Tools/CCDiaryCLI/main.swift)
+unless `--no-default-exclude` is passed:
+
+- `observer-sessions` — `claude-mem-observer-sessions` writes pathologically
+  large JSONLs with no useful diary content.
+- `claude-mem` — same family.
+- `ClaudeProbe` — **CodexBar.app** (`com.steipete.codexbar`, Peter Steipete's
+  menu-bar status app) repeatedly spawns `claude` CLI with `cwd =
+  ~/Library/Application Support/CodexBar/ClaudeProbe` and slash commands like
+  `/usage` / `/status` (thousands of entries in `~/.claude/history.jsonl`).
+  These don't persist transcripts in `~/.claude/projects/`, but the project
+  name still leaks into stats and the diary with `messageCount: 0`. Marker
+  checks miss it because there's no JSONL to probe.
+
+When you spot a new automated-but-marker-less project polluting the diary,
+adding its substring here is the fix. Past stats cache entries are NOT
+recomputed automatically — `rm -rf ~/Library/Caches/CCDiary/statistics/` after
+changing the list, then regenerate affected dates with `--force`.
+
 ## Performance Optimizations
 
 ### Diary Generation (aggregateForDate)
