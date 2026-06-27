@@ -401,7 +401,7 @@ private struct CLIOptions {
     /// Always-on default exclusions. Auto-instrumented projects whose JSONL
     /// files balloon and stall the aggregator. Override or extend at the CLI
     /// with --exclude-project <name>; pass --no-default-exclude to clear.
-    static let defaultExcludeSubstrings: [String] = ["observer-sessions", "claude-mem"]
+    static let defaultExcludeSubstrings: [String] = ["observer-sessions", "claude-mem", "ClaudeProbe"]
 
     static let help = """
     Usage:
