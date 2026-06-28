@@ -3,6 +3,8 @@ set -euo pipefail
 trap 'echo "ERROR: install failed at line $LINENO" >&2' ERR
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=_launchd-paths.sh
+source "${ROOT_DIR}/scripts/_launchd-paths.sh"
 LABEL="sh.saqoo.CCDiary.daily"
 GENERATE_LABEL="sh.saqoo.CCDiary.daily-generate"
 PLIST_TEMPLATE="${ROOT_DIR}/launchd/${LABEL}.plist"
@@ -11,7 +13,23 @@ PLIST_DEST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 GENERATE_PLIST_DEST="${HOME}/Library/LaunchAgents/${GENERATE_LABEL}.plist"
 LOG_DIR="${HOME}/Library/Logs/CCDiary"
 DOMAIN="gui/$(id -u)"
-BIN_PATH="${ROOT_DIR}/build/Build/Products/Release/ccdiary-cli"
+BIN_BUILD_PATH="${ROOT_DIR}/build/Build/Products/Release/ccdiary-cli"
+# Install the launchd binary OUTSIDE ~/Documents. Empirically observed on
+# Saqoosha's Mac Studio: when a Documents-TCC consent dialog is pending in the
+# user session (typically triggered by a Claude Code auto-update touching
+# ~/Documents), the 04:00/04:05 launchd fires don't run on time if the
+# LaunchAgent's binary lives under ~/Documents — the post arrives only after
+# the dialog is dismissed, often hours later. The exact gating layer (TCC,
+# exec policy, launchd's launch path, or the pending dialog blocking the user
+# session) isn't proven, but moving the installed binary to
+# ~/Library/Application Support/CCDiary/bin reliably eliminates the symptom
+# because that path doesn't sit behind the Documents consent prompt. The repo,
+# build output, and signing happen in-place; only the installed copy moves out.
+#
+# Do NOT point the LaunchAgent at the build path under ~/Documents — that
+# re-arms the failure mode.
+BIN_INSTALL_DIR="${CCDIARY_BIN_INSTALL_DIR}"
+BIN_PATH="${CCDIARY_BIN_INSTALL_PATH}"
 
 MODE="push-only"
 
@@ -70,8 +88,36 @@ xcodebuild \
   -derivedDataPath "${ROOT_DIR}/build" \
   build
 
-if [[ ! -x "${BIN_PATH}" ]]; then
-    echo "ERROR: built binary not found at ${BIN_PATH}" >&2
+if [[ ! -x "${BIN_BUILD_PATH}" ]]; then
+    echo "ERROR: built binary not found at ${BIN_BUILD_PATH}" >&2
+    exit 1
+fi
+
+# Stage the new binary next to its final path, sign it there, then atomically
+# `mv` into place. Never overwrite ${BIN_PATH} in-place: if codesign (or any
+# other step between cp and the final rename) fails, the live LaunchAgent
+# would otherwise be left pointing at an unsigned/ad-hoc copy that defeats the
+# whole TCC/Keychain stability the install script exists to protect. mktemp
+# under BIN_INSTALL_DIR keeps the staging file on the same filesystem so the
+# final mv is atomic; the trap cleans up the partial copy on any earlier
+# failure path.
+echo "==> Installing ccdiary-cli to ${BIN_PATH}"
+if ! mkdir -p "${BIN_INSTALL_DIR}"; then
+    echo "ERROR: failed to create ${BIN_INSTALL_DIR}" >&2
+    exit 1
+fi
+if ! BIN_STAGING_PATH="$(mktemp "${BIN_INSTALL_DIR}/ccdiary-cli.XXXXXX")"; then
+    echo "ERROR: failed to create staging file under ${BIN_INSTALL_DIR}" >&2
+    exit 1
+fi
+# shellcheck disable=SC2154  # rc is assigned at the start of this same trap body.
+trap 'rc=$?; rm -f "${BIN_STAGING_PATH}"; echo "ERROR: install failed at line $LINENO" >&2; exit $rc' ERR
+if ! cp -p "${BIN_BUILD_PATH}" "${BIN_STAGING_PATH}"; then
+    echo "ERROR: failed to copy ${BIN_BUILD_PATH} → ${BIN_STAGING_PATH}" >&2
+    exit 1
+fi
+if [[ ! -x "${BIN_STAGING_PATH}" ]]; then
+    echo "ERROR: staged binary not executable at ${BIN_STAGING_PATH}" >&2
     exit 1
 fi
 
@@ -89,12 +135,12 @@ fi
 SIGN_IDENTITY="${CCDIARY_SIGN_IDENTITY:-Developer ID Application: Whatever Co. (G5G54TCH8W)}"
 if security find-identity -v -p codesigning | grep -qF "${SIGN_IDENTITY}"; then
     echo "==> Code-signing ccdiary-cli (${SIGN_IDENTITY})"
-    if ! codesign --force --sign "${SIGN_IDENTITY}" "${BIN_PATH}"; then
-        echo "ERROR: codesign failed for ${BIN_PATH} with identity '${SIGN_IDENTITY}'." >&2
+    if ! codesign --force --sign "${SIGN_IDENTITY}" "${BIN_STAGING_PATH}"; then
+        echo "ERROR: codesign failed for ${BIN_STAGING_PATH} with identity '${SIGN_IDENTITY}'." >&2
         echo "       Refusing to install an unsigned agent (TCC/Keychain grants would not persist)." >&2
         exit 1
     fi
-    codesign -dvv "${BIN_PATH}" 2>&1 | grep -E 'Authority=|TeamIdentifier=' | sed 's/^/    /'
+    codesign -dvv "${BIN_STAGING_PATH}" 2>&1 | grep -E 'Authority=|TeamIdentifier=' | sed 's/^/    /'
 else
     # Without a stable signature the binary stays ad-hoc, whose requirement changes
     # every rebuild and resets TCC/Keychain grants — the unattended 04:00 run would
@@ -106,6 +152,16 @@ else
     echo "       CCDIARY_SIGN_IDENTITY to a Developer ID or a persistent self-signed cert." >&2
     exit 1
 fi
+
+# Atomically swap the signed staging copy into place. Same-filesystem mv is
+# atomic, so the LaunchAgent at BIN_PATH either sees the old signed binary or
+# the new signed binary — never a partial or unsigned write. After this point
+# the staging trap is no longer needed.
+if ! mv -f "${BIN_STAGING_PATH}" "${BIN_PATH}"; then
+    echo "ERROR: failed to swap staged binary into ${BIN_PATH}" >&2
+    exit 1
+fi
+trap 'echo "ERROR: install failed at line $LINENO" >&2' ERR
 
 render_and_install() {
     local template="$1"

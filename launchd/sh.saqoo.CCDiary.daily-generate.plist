@@ -2,9 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
     Template plist. install-daily-launch-agent.sh substitutes:
-        @CCDIARY_BIN@   →  absolute path to the built ccdiary-cli binary
+        @CCDIARY_BIN@   →  absolute path to the *installed* ccdiary-cli (outside ~/Documents;
+                           see install-daily-launch-agent.sh for the Documents-TCC rationale)
         @LOG_DIR@       →  absolute path to ~/Library/Logs/CCDiary
-    Do not commit the rendered version with absolute forms.
+    Do not commit the rendered version with absolute paths.
 
     Runs ONLY on the primary Mac. Generates the diary from local activity
     merged with host-stats pushed by other Macs in the fleet, then posts
