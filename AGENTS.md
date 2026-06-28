@@ -243,6 +243,29 @@ TCC prompt would silently stall the run. Two things keep it dialog-free:
   `~/Library/Application Support/CCDiary` (not the TCC-protected Documents folder).
   Older locations (`~/Documents/CCDiary`, then `~/Documents/ccdiary`) auto-migrate on
   first run and their now-empty trees are removed. A custom path set in the GUI still wins.
+- **The launchd-invoked `ccdiary-cli` binary lives outside `~/Documents` too —
+  do NOT point the LaunchAgent plist at the build path under `~/Documents`,
+  that re-arms the failure mode below.** `install-daily-launch-agent.sh` stages
+  the freshly built binary from `build/Build/Products/Release/ccdiary-cli`
+  (inside the repo, which itself sits under `~/Documents/repos/…` on Saqoosha's
+  Mac) into a temp file under `~/Library/Application Support/CCDiary/bin/`,
+  signs that staged copy, then atomically `mv`s it to
+  `~/Library/Application Support/CCDiary/bin/ccdiary-cli`, and points both
+  LaunchAgent plists at the installed path. The repo / build artifacts can
+  stay in Documents; only the binary launchd actually `exec()`s is moved. The
+  shared install location lives in [scripts/_launchd-paths.sh](scripts/_launchd-paths.sh)
+  so install and uninstall can never drift. Reason: empirically observed on
+  Saqoosha's Mac Studio — whenever Claude Code (or anything else) triggers a
+  fresh Documents TCC prompt for the user session, the dialog can sit pending
+  for hours, and while it's pending the 04:00/04:05 launchd fires don't run on
+  time if the binary they point at lives under `~/Documents`. The exact gating
+  layer (TCC, exec policy, the pending dialog blocking launchd's launch path,
+  or something else) isn't proven, but the symptom is consistent: on days with
+  no claude-CLI update the post lands at 04:05; on days with one, it lands only
+  after Saqoosha dismisses the Documents dialog (often much later). Pointing
+  launchd at a copy under `~/Library/Application Support/CCDiary/bin/`
+  eliminates the symptom because that path doesn't sit behind the Documents
+  consent prompt.
 - **`ccdiary-cli` is signed with a stable Developer ID.** The plain Xcode build is
   ad-hoc signed, whose Designated Requirement is CDHash-based and changes on every
   rebuild — that invalidates TCC (Full Disk Access) and Keychain grants, so a rebuild
@@ -263,9 +286,11 @@ with ad-hoc signing it reset every time.
 `ccdiary-cli` resolves every secret in this order: process env, then a file at
 `~/.config/ccdiary/secrets` (override with `CCDIARY_SECRETS_FILE`), then
 Keychain. The file uses simple `KEY=value` lines (matching the env var
-names) and should be `chmod 600`. Use it for the LaunchAgent so launchd
-never has to ask for Keychain access (the ACL invalidates on every Release
-rebuild because the binary's ad-hoc signature changes).
+names) and should be `chmod 600`. Use it for the LaunchAgent so launchd never
+has to ask for Keychain access — even with the stable Developer ID signing
+above (which keeps the Keychain ACL valid across rebuilds), the secrets file
+is still preferred because it avoids any Keychain prompt at all and works on
+forks that haven't set up a signing identity yet.
 
 ```bash
 mkdir -p ~/.config/ccdiary
