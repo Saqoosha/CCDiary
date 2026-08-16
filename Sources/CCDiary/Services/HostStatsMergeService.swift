@@ -151,9 +151,9 @@ enum HostStatsMergeService {
         }
         // `DayStatistics`' explicit init takes no `incompleteSources` (the
         // property defaults to []), so every rebuild in the loop above drops
-        // it. Restore the local Mac's flag once, after the loop. No consumer
-        // reads it post-merge today — this is plumbing for a future guard, not
-        // load-bearing. Behaviour is identical to assigning inside the loop.
+        // it. Restore the local Mac's flag once, after the loop —
+        // `sync-cloud`'s pre-upload incomplete warning reads it. Behaviour is
+        // identical to assigning inside the loop.
         merged.incompleteSources = localIncomplete
         return merged
     }

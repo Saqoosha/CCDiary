@@ -194,6 +194,9 @@ Multiple optimizations reduce diary generation time from ~14s to ~2s:
 - Uses `StatsEntry` lightweight decoder (even lighter than `LightEntry`)
 - Binary search for large files
 - Results cached for past dates (~0.3ms on cache hit)
+- Returns `QuickStatisticsResult` (`.idle` / `.measured` / `.unavailable`) so
+  callers cannot treat a verified zero and a failed read as the same value;
+  `.unavailable` must never become a published zero
 
 ### Caches
 
@@ -244,12 +247,19 @@ not. No periodic forced rescan was added — `rm -rf
 #### A timed-out reader must never be cached as an under-count
 
 `AggregatorService.runWithTimeout` degrades a timeout to an empty result.
-Precisely: a day where *every* source came back empty was already safe —
-`getQuickStatistics` returns `nil` before reaching the cache — so the damage was
-never an all-zero entry. It was the **partial** case: one reader times out while
-another returns data, and the resulting under-count was written straight into
-the Statistics Cache, where it served that wrong answer for that date forever
-after. Readers now report which source was cut short
+Precisely: a day where *every* source came back empty used to be ambiguous —
+`getQuickStatistics` returned `nil` for both verified idle and "nothing could
+be read", so callers could not tell them apart. It now returns
+`QuickStatisticsResult`: `.idle` (every enabled reader completed, found
+nothing — a real zero, safe to publish or seed a merge with),
+`.measured(DayStatistics)` (has data; `incompleteSources` non-empty means a
+lower bound), or `.unavailable(sources:)` (nothing read and at least one
+reader failed — must never become a published zero). The damage to avoid was
+never an all-zero cache entry from a fully-failed day (that path returned
+before the cache write); it was the **partial** case: one reader times out
+while another returns data, and the resulting under-count was written straight
+into the Statistics Cache, where it served that wrong answer for that date
+forever after. Readers report which source was cut short
 (`DayStatistics.incompleteSources` / `DailyActivity.incompleteSources` —
 `DayStatistics` deliberately omits the field from `CodingKeys` so it never
 reaches disk or the cloud; `DailyActivity` is `Sendable` only and is never
@@ -261,7 +271,7 @@ covers the **local statistics cache only**; `--post-cloud`, `push-stats`, and
 `sync-cloud --compute-stats` still upload under-counted numbers with a stderr
 warning (and a peer Mac merges them as truth). Asymmetry after the merge
 refusal narrowing: `generate --merge-cloud-stats` refuses only when there is
-no local measurement at all (nil + incomplete/failed compute), leaving the
+no local measurement at all (throw or `.unavailable`), leaving the
 server's existing columns untouched; the other upload paths above still send
 whatever they have with a warning.
 
@@ -416,12 +426,14 @@ The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated 
 
   **Trap (fixed 2026-08-16, observed live on 2026-08-15):** the merge is seeded
   with `DayStatistics.empty(for:)` when the local Mac was idle. Previously the
-  code bound `if ..., let localStats = stats`, and `getQuickStatistics` returns
-  `nil` on a zero-activity day — so on any day the primary Mac did nothing, the
-  whole merge was skipped and the cloud row landed with 0 sessions / 0 messages
-  even though the prose was correctly built from remote digests. Prose merging
-  (`mergeDailyActivity`) and stats merging (`mergeDayStatistics`) are separate
-  paths; fixing one does not fix the other.
+  code bound `if ..., let localStats = stats`, and `getQuickStatistics` returned
+  a collapsed `nil` on a zero-activity day — so on any day the primary Mac did
+  nothing, the whole merge was skipped and the cloud row landed with 0 sessions
+  / 0 messages even though the prose was correctly built from remote digests.
+  Prose merging (`mergeDailyActivity`) and stats merging (`mergeDayStatistics`)
+  are separate paths; fixing one does not fix the other. Idle is now
+  `QuickStatisticsResult.idle` (distinct from `.unavailable`); do not seed
+  `.empty` from `.unavailable`.
 - Local dev: `cd web && bun install && bun run db:apply:local && bun run dev` (server at `localhost:4321`). Use `dev-local-token` from `.dev.vars.example` for local POSTs.
 - Full deploy runbook: [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
 

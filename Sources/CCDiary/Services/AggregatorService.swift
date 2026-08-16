@@ -232,8 +232,30 @@ actor AggregatorService {
         }
     }
 
+    /// Outcome of a quick-statistics read. Replaces `DayStatistics?`, where `nil`
+    /// collapsed a measured zero and an unmeasurable day into the same value and
+    /// let an unverified zero be published as fact.
+    enum QuickStatisticsResult: Sendable {
+        /// Every enabled reader completed and found no activity. A real
+        /// measurement of zero — safe to publish or to seed a merge with.
+        case idle
+        /// At least one project was found. `stats.incompleteSources` is non-empty
+        /// when some *other* reader was cut short, meaning the numbers are a lower
+        /// bound rather than a measurement.
+        case measured(DayStatistics)
+        /// Nothing was read and at least one reader failed. Never derive a zero
+        /// from this — the day may or may not have been idle.
+        case unavailable(sources: [ActivitySource])
+    }
+
     /// Get quick statistics for a date.
-    func getQuickStatistics(for date: Date, options: AggregateOptions = AggregateOptions()) async throws -> DayStatistics? {
+    ///
+    /// The result type distinguishes "verified idle" from "read failed", and
+    /// each CLI publishing path honours that distinction. The GUI still treats
+    /// both as `currentDayStatistics == nil` ("No activity") until a separate
+    /// UI change lands. Idle days are still not cached — only complete
+    /// `.measured` results are written.
+    func getQuickStatistics(for date: Date, options: AggregateOptions = AggregateOptions()) async throws -> QuickStatisticsResult {
         let startTime = CFAbsoluteTimeGetCurrent()
         let dateString = DateFormatting.iso.string(from: date)
 
@@ -242,22 +264,23 @@ actor AggregatorService {
            let cached = await statisticsCache.get(for: dateString) {
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
             logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (cached)")
-            return cached
+            return .measured(cached)
         }
 
         let (rawAgentProjects, incompleteSources) = await readAllAgentProjects(for: date, options: options)
         let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
         if agentProjects.isEmpty {
-            // Empty can mean "genuinely idle" or "a reader timed out before
-            // returning anything". Only the latter must not be mistaken for a
-            // verified zero — warn so daily.err.log names the date.
+            // Empty can mean "genuinely idle" or "a reader did not complete
+            // before returning anything". Only the latter must not be mistaken
+            // for a verified zero — warn so daily.err.log names the date.
             if !incompleteSources.isEmpty {
                 let names = incompleteSources.map(\.rawValue).joined(separator: ", ")
-                let message = "quick statistics for \(dateString) are incomplete (\(names)) — a reader timed out; zero is unverified"
+                let message = "quick statistics for \(dateString) are incomplete (\(names)) — a reader did not complete (timeout, error, or cancellation); zero is unverified"
                 logger.warning("\(message, privacy: .public)")
                 fputs("Warning: \(message)\n", stderr)
+                return .unavailable(sources: incompleteSources)
             }
-            return nil
+            return .idle
         }
 
         let projectSummaries = agentProjects
@@ -307,7 +330,7 @@ actor AggregatorService {
         let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
         logger.notice("getQuickStatistics(\(dateString)): \(elapsed, format: .fixed(precision: 1))ms (CC: \(statistics.ccProjectCount) proj/\(statistics.ccMessageCount) msgs, Codex: \(statistics.codexProjectCount) proj/\(statistics.codexMessageCount) msgs, Cursor: \(statistics.cursorProjectCount) proj/\(statistics.cursorMessageCount) msgs)")
 
-        return statistics
+        return .measured(statistics)
     }
 
     /// Get all dates that have activity (Claude Code + Codex + Cursor)
