@@ -39,6 +39,9 @@ struct DailyActivity: Sendable {
     let date: Date
     let projects: [ProjectActivity]
     let totalInputs: Int
+    /// Sources whose read timed out or failed. Empty means every enabled
+    /// reader finished; non-empty means the project list may under-count.
+    var incompleteSources: [ActivitySource] = []
 
     /// Format date as localized string
     var formattedDate: String {
