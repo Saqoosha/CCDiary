@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+import os.log
+
+private let logger = Logger(subsystem: "CCDiary", category: "DiaryViewModel")
 
 // MARK: - FocusedValue for menu access
 
@@ -283,17 +286,34 @@ final class DiaryViewModel {
 
         // Load statistics
         do {
-            currentDayStatistics = try await aggregator.getQuickStatistics(for: date)
-
-            // Remove from activity dates if no actual messages
-            if let stats = currentDayStatistics, stats.messageCount == 0 {
-                datesWithActivity.remove(dateString)
-            }
-
-            // Select all projects except previously excluded ones
-            if let stats = currentDayStatistics {
+            switch try await aggregator.getQuickStatistics(for: date) {
+            case .idle:
+                // Verified zero. The old nil path left the calendar mark alone
+                // (`if let stats = …, messageCount == 0` failed on nil), so this
+                // keeps that — the PR stays confined to the CLI's publishing
+                // decisions, not what the calendar shows.
+                currentDayStatistics = nil
+            case .measured(let stats):
+                currentDayStatistics = stats
+                // Only strip the calendar mark when the zero is complete; a
+                // partial under-count must not erase a day that may still have
+                // messages from the timed-out source.
+                if stats.messageCount == 0, stats.incompleteSources.isEmpty {
+                    datesWithActivity.remove(dateString)
+                }
                 let allPaths = Set(stats.projects.map { $0.path })
                 selectedProjects = allPaths.subtracting(excludedProjects)
+            case .unavailable(let sources):
+                // Read failed — do not destroy calendar state on the strength
+                // of an incomplete measurement. Leave datesWithActivity as it
+                // already is. The GUI still routes `currentDayStatistics == nil`
+                // to "No activity"; distinguishing failure from idle needs a
+                // UI change tracked separately.
+                let names = sources.map(\.rawValue).joined(separator: ", ")
+                logger.warning(
+                    "quick statistics unavailable for \(dateString, privacy: .public) (\(names, privacy: .public)); GUI still shows No activity"
+                )
+                currentDayStatistics = nil
             }
         } catch {
             currentDayStatistics = nil

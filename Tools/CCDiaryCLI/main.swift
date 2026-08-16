@@ -147,15 +147,27 @@ enum CCDiaryCLI {
         if options.postCloud {
             var stats: DayStatistics?
             /// True when `getQuickStatistics` threw — "never measured", not idle.
-            /// Known limitation left open: when *every* reader times out,
-            /// `getQuickStatistics` returns `nil` without throwing, indistinguishable
-            /// from "measured, genuinely idle" from outside. `runGenerate` covers
-            /// that via `DailyActivity.incompleteSources`; `sync-cloud` has no
-            /// equivalent signal and stays exposed until `getQuickStatistics`
-            /// stops collapsing idle and unknown into `nil`.
+            /// Currently unreachable: `getQuickStatistics` cannot throw (no `try`
+            /// in its body); kept so a future throw is handled rather than
+            /// falling through to `.empty` seeding.
             var statsComputeFailed = false
+            /// True when the quick-stats read found nothing and at least one
+            /// reader failed — also untrusted; must not seed `.empty` or publish
+            /// a zero from an unverified day.
+            var statsUnavailable = false
+            var unavailableSources: [ActivitySource] = []
             do {
-                stats = try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions)
+                switch try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions) {
+                case .idle:
+                    // Measured zero — seeding `.empty(for:)` on merge is honest.
+                    stats = nil
+                case .measured(let s):
+                    stats = s
+                case .unavailable(let sources):
+                    stats = nil
+                    statsUnavailable = true
+                    unavailableSources = sources
+                }
             } catch {
                 fputs("Warning: failed to compute quick statistics for \(DateFormatting.iso.string(from: options.date)): \(error.localizedDescription)\n", stderr)
                 stats = nil
@@ -164,36 +176,27 @@ enum CCDiaryCLI {
             if let incomplete = stats?.incompleteSources, !incomplete.isEmpty {
                 let names = incomplete.map(\.rawValue).joined(separator: ", ")
                 let dateString = DateFormatting.iso.string(from: options.date)
-                fputs("Warning: cloud stats for \(dateString) are incomplete (\(names)) — a reader timed out\n", stderr)
-            }
-            // Worst case: every reader timed out → getQuickStatistics returns
-            // nil, so the stats?.incompleteSources guard above cannot fire.
-            if stats == nil, !localReadIncomplete.isEmpty {
-                let names = localReadIncomplete.map(\.rawValue).joined(separator: ", ")
-                let dateString = DateFormatting.iso.string(from: options.date)
-                fputs("Warning: cloud stats for \(dateString) are incomplete (\(names)) — local read could not be trusted\n", stderr)
+                fputs("Warning: cloud stats for \(dateString) are incomplete (\(names)) — a reader did not complete (timeout, error, or cancellation)\n", stderr)
             }
             // Merge local stats with remote stats when --merge-cloud-stats is set.
             // Seed from `.empty` when this Mac was idle — otherwise the merge
             // is skipped and the cloud row lands with zeros despite remote
             // hosts having activity. Refuse only when there is *no* local
-            // measurement we can vouch for (nil + incomplete/failed): that
+            // measurement we can vouch for (throw or `.unavailable`): that
             // would invent a zero and upload remote-only numbers as fact.
-            // A partial local plus good remotes is strictly better than the
-            // partial alone — merge those, keeping the incomplete warning.
+            // `localReadIncomplete` from `aggregateForDate` is a separate read
+            // and is no longer part of this decision — `QuickStatisticsResult`
+            // carries the truth about the read that produced `stats`.
+            // A partial local (`.measured` with incompleteSources) plus good
+            // remotes is strictly better than the partial alone — merge those,
+            // keeping the incomplete warning above.
             if options.mergeCloudStats, !remoteStatsForCloud.isEmpty {
-                let noVouchedLocal = stats == nil && (!localReadIncomplete.isEmpty || statsComputeFailed)
+                let noVouchedLocal = statsComputeFailed || statsUnavailable
                 if noVouchedLocal {
-                    let names = localReadIncomplete.map(\.rawValue).joined(separator: ", ")
-                    let dateString = DateFormatting.iso.string(from: options.date)
-                    let reason = names.isEmpty ? "stats computation failed" : "local read incomplete (\(names))"
-                    // `stats` is already nil here (it is a conjunct of
-                    // `noVouchedLocal`); sending no stats block is what makes
-                    // the server preserve the row. Caveat in the message: that
-                    // preservation lives in `upsertDiary`'s ON CONFLICT arm
-                    // only — a first-time ingest for this date takes the INSERT
-                    // arm and writes zeros regardless.
-                    fputs("Warning: cloud stats for \(dateString) not sent — \(reason); refusing to invent a zero measurement (an existing row keeps its columns; a first-time insert still lands as 0)\n", stderr)
+                    // Sending no stats block is what makes the server preserve
+                    // the row. Warning is hoisted below so merge-off / no-remote
+                    // paths also name the date before upload.
+                    stats = nil
                 } else {
                     stats = HostStatsMergeService.mergeDayStatistics(
                         local: stats ?? .empty(for: options.date),
@@ -201,6 +204,22 @@ enum CCDiaryCLI {
                         excludeProjectSubstrings: options.excludeProjectSubstrings
                     )
                 }
+            }
+            // Always warn once before upload when there is no vouched local
+            // measurement — merge-off / empty-remotes used to reach postToCloud
+            // silently and a first-time INSERT still lands zeros.
+            if statsUnavailable || statsComputeFailed {
+                let dateString = DateFormatting.iso.string(from: options.date)
+                let reason: String
+                if statsComputeFailed {
+                    reason = "stats computation failed"
+                } else {
+                    let names = unavailableSources.map(\.rawValue).joined(separator: ", ")
+                    reason = names.isEmpty
+                        ? "quick statistics unavailable"
+                        : "quick statistics unavailable (\(names))"
+                }
+                fputs("Warning: cloud stats for \(dateString) not sent — \(reason); refusing to invent a zero measurement (an existing row keeps its columns; a first-time insert still lands as 0)\n", stderr)
             }
             let result = try await postToCloud(
                 entry: entry,
@@ -741,13 +760,14 @@ extension CCDiaryCLI {
             // and no cache exists (e.g. historical diaries created before stats were tracked).
             var stats = await cache.get(for: entry.dateString)
             /// True when `getQuickStatistics` threw — "never measured", not idle.
-            /// Known limitation left open: when *every* reader times out,
-            /// `getQuickStatistics` returns `nil` without throwing, indistinguishable
-            /// from "measured, genuinely idle" from outside. `runGenerate` covers
-            /// that via `DailyActivity.incompleteSources`; `sync-cloud` has no
-            /// equivalent signal and stays exposed until `getQuickStatistics`
-            /// stops collapsing idle and unknown into `nil`.
+            /// Currently unreachable: `getQuickStatistics` cannot throw (no `try`
+            /// in its body); kept so a future throw is handled rather than
+            /// falling through to `.empty` seeding.
             var statsComputeFailed = false
+            /// True when a live quick-stats read returned `.unavailable` — treat
+            /// like a failed compute: never seed `.empty` from an unverified day.
+            var statsUnavailable = false
+            var unavailableSources: [ActivitySource] = []
             if stats == nil, let aggregator,
                let date = DateFormatting.iso.date(from: entry.dateString) {
                 let aggregateOptions = AggregateOptions(
@@ -756,7 +776,21 @@ extension CCDiaryCLI {
                     excludeProjectSubstrings: options.excludeProjectSubstrings
                 )
                 do {
-                    stats = try await aggregator.getQuickStatistics(for: date, options: aggregateOptions)
+                    switch try await aggregator.getQuickStatistics(for: date, options: aggregateOptions) {
+                    case .idle:
+                        // Measured zero: keep `stats` nil so `--compute-stats`
+                        // can still seed `.empty` on merge. Without
+                        // `--compute-stats`, nil still means "never computed".
+                        break
+                    case .measured(let s):
+                        stats = s
+                    case .unavailable(let sources):
+                        stats = nil
+                        statsUnavailable = true
+                        unavailableSources = sources
+                        let names = sources.map(\.rawValue).joined(separator: ", ")
+                        fputs("  \(entry.dateString) → quick statistics unavailable (\(names))\n", stderr)
+                    }
                 } catch {
                     fputs("  \(entry.dateString) → stats computation failed: \(error.localizedDescription)\n", stderr)
                     stats = nil
@@ -768,7 +802,7 @@ extension CCDiaryCLI {
             // re-running AI generation. Only seed `.empty` when --compute-stats
             // ran (nil then means "measured idle"); nil without it means
             // "never measured" and must not overwrite a correct cloud row.
-            // Same refusal when computation threw — that is also "never measured".
+            // Same refusal when computation threw or returned `.unavailable`.
             var mergedRemoteCount = 0
             if options.mergeCloudStats, let date = DateFormatting.iso.date(from: entry.dateString) {
                 do {
@@ -779,10 +813,16 @@ extension CCDiaryCLI {
                         let remotes = result.hosts.filter { normalizedHostKey($0.host) != localKey }.map(\.stats)
                         if remotes.isEmpty {
                             print("  \(entry.dateString) → remote host stats found but all from local host (\(localHost)) — skipping merge")
-                        } else if stats == nil && (!options.computeStats || statsComputeFailed) {
-                            let reason = statsComputeFailed
-                                ? "stats computation failed"
-                                : "no local stats (re-run with --compute-stats to repair an idle day)"
+                        } else if stats == nil && (!options.computeStats || statsComputeFailed || statsUnavailable) {
+                            let reason: String
+                            if statsComputeFailed {
+                                reason = "stats computation failed"
+                            } else if statsUnavailable {
+                                let names = unavailableSources.map(\.rawValue).joined(separator: ", ")
+                                reason = "quick statistics unavailable (\(names))"
+                            } else {
+                                reason = "no local stats (re-run with --compute-stats to repair an idle day)"
+                            }
                             fputs("  \(entry.dateString) → skipping merge-cloud-stats: \(reason); sending no stats block, so an existing cloud row keeps its columns\n", stderr)
                         } else {
                             stats = HostStatsMergeService.mergeDayStatistics(
@@ -803,6 +843,10 @@ extension CCDiaryCLI {
                     fputs("  \(entry.dateString) → host-stats fetch failed: \(error.localizedDescription); sending no stats block, so an existing cloud row keeps its columns\n", stderr)
                     stats = nil
                 }
+            }
+            if let incomplete = stats?.incompleteSources, !incomplete.isEmpty {
+                let names = incomplete.map(\.rawValue).joined(separator: ", ")
+                fputs("  \(entry.dateString) → Warning: cloud stats are incomplete (\(names)) — a reader did not complete (timeout, error, or cancellation)\n", stderr)
             }
             do {
                 let result = try await service.upload(
@@ -1020,18 +1064,23 @@ extension CCDiaryCLI {
 
         // Fetch both quick stats and full activity.
         print("Aggregating stats for \(dateString)...")
-        guard let stats = try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions) else {
-            // Deliberately does not assert idleness: `getQuickStatistics`
-            // returns nil both for a verified-idle day and for one where every
-            // reader was cut short. It emits its own "zero is unverified"
-            // warning to stderr in the latter case, which is the trail that
-            // tells these two apart until that nil stops being overloaded.
-            print("No statistics to push for \(dateString).")
+        let stats: DayStatistics
+        switch try await aggregator.getQuickStatistics(for: options.date, options: aggregateOptions) {
+        case .idle:
+            // Assertion is now correct: `.idle` is a verified zero, not an
+            // overloaded nil that also covered timed-out readers.
+            print("No activity found for \(dateString) — nothing to push.")
             return
+        case .unavailable(let sources):
+            let names = sources.map(\.rawValue).joined(separator: ", ")
+            fputs("Warning: quick statistics for \(dateString) unavailable (\(names)) — read could not be completed; nothing pushed\n", stderr)
+            return
+        case .measured(let s):
+            stats = s
         }
         if !stats.incompleteSources.isEmpty {
             let names = stats.incompleteSources.map(\.rawValue).joined(separator: ", ")
-            fputs("Warning: cloud stats for \(dateString) are incomplete (\(names)) — a reader timed out\n", stderr)
+            fputs("Warning: cloud stats for \(dateString) are incomplete (\(names)) — a reader did not complete (timeout, error, or cancellation)\n", stderr)
         }
 
         print("Aggregating full activity for \(dateString)...")
