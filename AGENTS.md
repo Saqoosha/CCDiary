@@ -199,6 +199,74 @@ Multiple optimizations reduce diary generation time from ~14s to ~2s:
 
 - **Date Index** (`~/Library/Caches/CCDiary/date_index_v3.json`): Maps dates to files containing that date (v3: automated sessions excluded)
 - **Statistics Cache** (`~/Library/Caches/CCDiary/statistics/`): Cached stats for past dates
+- **Cursor Bubble Index** (`~/Library/Caches/CCDiary/cursor_bubble_index_v4.json`): Maps dates to `cursorDiskKV` bubble keys
+
+#### Cursor bubble index is incremental (v4)
+
+`state.vscdb` grows without bound (3.4 GB observed, measured 2026-08-16). v1
+re-scanned every `bubbleId:%` row whenever the DB's mtime changed — i.e. every
+day Cursor was used — costing ~10s warm (measured 2026-08-16) and much more
+under load. v2/v3/v4 store a `maxRowid` watermark and only scan
+`rowid >= watermark`, which SQLite serves as
+`SEARCH cursorDiskKV USING INTEGER PRIMARY KEY (rowid>?)` — a seek, not a scan
+(SQLite renders a `>=` bind as `(rowid>?)` in `EXPLAIN QUERY PLAN`).
+The `>=` (not `>`) is deliberate overlap covering rowid reuse at exactly the
+watermark; the per-date `Set` dedupe in `mergeIndex` absorbs the one redundant
+row.
+
+This is safe because `cursorDiskKV` is declared
+`key TEXT UNIQUE ON CONFLICT REPLACE`: rewriting a bubble deletes the old row
+and re-inserts it at a **new, higher** rowid, so edits reappear above the
+watermark rather than hiding below it. The index derives the date from
+`createdAt` **and** membership from the byte pre-filter (`"type":1`/`"type":2`
+present, `"text":""` absent). Most excluded rows are permanently empty
+tool/thinking bubbles (not pending fill-in); a genuine message fill-in
+re-enters above the watermark via REPLACE. `createdAt` itself is immutable, so
+a re-seen bubble maps to the same date and is de-duplicated on merge. A full
+rescan is forced when any of: the index has never been built (`hasBuilt`, not
+`maxRowid == 0`); `MAX(rowid)` went **backwards** (vacuum/reset); or the
+unfiltered `bubbleId:%` row count decreased (net deletion). Known limitation:
+a DB replaced with one whose bubble row count is not lower and whose
+`MAX(rowid)` did not regress keeps serving a stale index until one of those
+three fires. Residual: a deletion exactly compensated by an equal or greater
+number of new rows between two runs still leaves stale keys until the next net
+deletion or rowid regression.
+
+The biggest known residual, left open deliberately: the incremental design
+rests on Cursor rewriting bubbles via `INSERT … ON CONFLICT REPLACE` (new
+higher rowid), verified experimentally. A plain `UPDATE … WHERE key = ?` would
+preserve the rowid, and since the watermark advances past pre-filtered rows,
+such bubbles would be excluded permanently with none of the three triggers
+noticing. v1's unconditional rescan absorbed this class invisibly; v4 does
+not. No periodic forced rescan was added — `rm -rf
+~/Library/Caches/CCDiary/cursor_bubble_index_v4.json` is the manual recovery.
+
+#### A timed-out reader must never be cached as an under-count
+
+`AggregatorService.runWithTimeout` degrades a timeout to an empty result.
+Precisely: a day where *every* source came back empty was already safe —
+`getQuickStatistics` returns `nil` before reaching the cache — so the damage was
+never an all-zero entry. It was the **partial** case: one reader times out while
+another returns data, and the resulting under-count was written straight into
+the Statistics Cache, where it served that wrong answer for that date forever
+after. Readers now report which source was cut short
+(`DayStatistics.incompleteSources` / `DailyActivity.incompleteSources` —
+`DayStatistics` deliberately omits the field from `CodingKeys` so it never
+reaches disk or the cloud; `DailyActivity` is `Sendable` only and is never
+serialized), and `getQuickStatistics` skips the cache write when anything is
+incomplete. Every reader timeout/failure warning names the date, on stderr as
+well as os_log — the AI-generation warnings around diary retries do not, and are
+outside this claim. That suppression
+covers the **local statistics cache only**; `--post-cloud`, `push-stats`, and
+`sync-cloud --compute-stats` still upload under-counted numbers with a stderr
+warning (and a peer Mac merges them as truth). Asymmetry after the merge
+refusal narrowing: `generate --merge-cloud-stats` refuses only when there is
+no local measurement at all (nil + incomplete/failed compute), leaving the
+server's existing columns untouched; the other upload paths above still send
+whatever they have with a warning.
+
+**Statistics cache entries written before this change may still hold unverified
+zeros.** `rm -rf ~/Library/Caches/CCDiary/statistics/` to recompute.
 
 ## Benchmark Tool
 
@@ -340,6 +408,20 @@ The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated 
 - Stats payload is derived from `DayStatistics` in [CloudIngestService.swift](Sources/CCDiary/Services/CloudIngestService.swift): sessions, messages, project_count, active_minutes, peak_hour, top_project, plus per-source (`claudeCode` / `cursor` / `codex`) breakdown and full `ProjectSummary[]`.
 - `--post-cloud` flag mirrors `--post-slack`: same skip rules under `--skip-existing`, same Keychain pattern. `--cloud-endpoint URL` implies `--post-cloud`.
 - Backfill historical diaries with `ccdiary-cli sync-cloud [--from YYYY-MM-DD] [--to YYYY-MM-DD]`. Pulls `DayStatistics` from `StatisticsCache` when available.
+- `--merge-cloud-stats` works on **both** `generate` and `sync-cloud`. On `generate` it merges other Macs' host-stats into the diary prose *and* the uploaded `DayStatistics`; on `sync-cloud` it exists to repair an already-ingested row without re-running AI generation:
+
+  ```bash
+  ccdiary-cli sync-cloud --from 2026-08-15 --to 2026-08-15 --merge-cloud-stats --compute-stats
+  ```
+
+  **Trap (fixed 2026-08-16, observed live on 2026-08-15):** the merge is seeded
+  with `DayStatistics.empty(for:)` when the local Mac was idle. Previously the
+  code bound `if ..., let localStats = stats`, and `getQuickStatistics` returns
+  `nil` on a zero-activity day — so on any day the primary Mac did nothing, the
+  whole merge was skipped and the cloud row landed with 0 sessions / 0 messages
+  even though the prose was correctly built from remote digests. Prose merging
+  (`mergeDailyActivity`) and stats merging (`mergeDayStatistics`) are separate
+  paths; fixing one does not fix the other.
 - Local dev: `cd web && bun install && bun run db:apply:local && bun run dev` (server at `localhost:4321`). Use `dev-local-token` from `.dev.vars.example` for local POSTs.
 - Full deploy runbook: [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
 

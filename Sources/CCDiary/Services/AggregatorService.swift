@@ -29,13 +29,21 @@ actor AggregatorService {
     private let cursorReader = CursorActivityReader()
     private let statisticsCache = StatisticsCache()
 
+    /// Result of one source read: the projects plus whether the read was cut
+    /// short. `incompleteSource != nil` means "we don't know", never "there
+    /// was nothing" — callers must not persist a zero derived from it.
+    private struct SourceReadResult: Sendable {
+        let projects: [AgentProjectActivity]
+        let incompleteSource: ActivitySource?
+    }
+
     /// Aggregate activity data for a specific date
     /// Uses parallel processing for better performance
     func aggregateForDate(_ date: Date, options: AggregateOptions = AggregateOptions()) async throws -> DailyActivity {
         let startTime = CFAbsoluteTimeGetCurrent()
         let dateString = DateFormatting.iso.string(from: date)
 
-        let rawAgentProjects = await readAllAgentProjects(for: date, options: options)
+        let (rawAgentProjects, incompleteSources) = await readAllAgentProjects(for: date, options: options)
         let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
         var allProjects = agentProjects.map {
             $0.toProjectActivity(
@@ -54,46 +62,79 @@ actor AggregatorService {
         return DailyActivity(
             date: date,
             projects: allProjects,
-            totalInputs: agentProjects.reduce(0) { $0 + $1.userInputs.count }
+            totalInputs: agentProjects.reduce(0) { $0 + $1.userInputs.count },
+            incompleteSources: incompleteSources
         )
     }
 
     private func readAllAgentProjects(
         for date: Date,
         options: AggregateOptions = AggregateOptions()
-    ) async -> [AgentProjectActivity] {
+    ) async -> (projects: [AgentProjectActivity], incompleteSources: [ActivitySource]) {
         let claudeReader = self.claudeReader
         let codexReader = self.codexReader
         let cursorReader = self.cursorReader
         let timeout = options.perSourceTimeoutSeconds
         let excludeCursor = options.excludeCursor
+        let dateString = DateFormatting.iso.string(from: date)
 
-        return await withTaskGroup(of: [AgentProjectActivity].self) { group in
+        return await withTaskGroup(of: SourceReadResult.self) { group in
             group.addTask {
-                (try? await Self.runWithTimeout(label: "Claude Code", seconds: timeout) {
-                    try await claudeReader.readActivity(for: date, options: options)
-                }) ?? []
+                do {
+                    return try await Self.runWithTimeout(source: .claudeCode, dateString: dateString, seconds: timeout) {
+                        try await claudeReader.readActivity(for: date, options: options)
+                    }
+                } catch {
+                    // A cancelled or unexpectedly-failed read is by definition
+                    // "we don't know" — mark incomplete so a partial aggregate
+                    // is never cached as a verified empty.
+                    let source = ActivitySource.claudeCode
+                    let message = "\(source.rawValue) read cancelled/failed for \(dateString): \(error.localizedDescription)"
+                    logger.warning("\(message, privacy: .public)")
+                    fputs("Warning: \(message)\n", stderr)
+                    return SourceReadResult(projects: [], incompleteSource: source)
+                }
             }
 
             group.addTask {
-                (try? await Self.runWithTimeout(label: "Codex", seconds: timeout) {
-                    try await codexReader.readActivity(for: date, options: options)
-                }) ?? []
+                do {
+                    return try await Self.runWithTimeout(source: .codex, dateString: dateString, seconds: timeout) {
+                        try await codexReader.readActivity(for: date, options: options)
+                    }
+                } catch {
+                    let source = ActivitySource.codex
+                    let message = "\(source.rawValue) read cancelled/failed for \(dateString): \(error.localizedDescription)"
+                    logger.warning("\(message, privacy: .public)")
+                    fputs("Warning: \(message)\n", stderr)
+                    return SourceReadResult(projects: [], incompleteSource: source)
+                }
             }
 
             if !excludeCursor {
                 group.addTask {
-                    (try? await Self.runWithTimeout(label: "Cursor", seconds: timeout) {
-                        try await cursorReader.readActivity(for: date, options: options)
-                    }) ?? []
+                    do {
+                        return try await Self.runWithTimeout(source: .cursor, dateString: dateString, seconds: timeout) {
+                            try await cursorReader.readActivity(for: date, options: options)
+                        }
+                    } catch {
+                        let source = ActivitySource.cursor
+                        let message = "\(source.rawValue) read cancelled/failed for \(dateString): \(error.localizedDescription)"
+                        logger.warning("\(message, privacy: .public)")
+                        fputs("Warning: \(message)\n", stderr)
+                        return SourceReadResult(projects: [], incompleteSource: source)
+                    }
                 }
             }
 
             var projects: [AgentProjectActivity] = []
+            var incompleteSources: [ActivitySource] = []
             for await result in group {
-                projects.append(contentsOf: result)
+                projects.append(contentsOf: result.projects)
+                if let source = result.incompleteSource {
+                    incompleteSources.append(source)
+                }
             }
-            return projects
+            return (projects, incompleteSources)
         }
     }
 
@@ -113,30 +154,37 @@ actor AggregatorService {
         }
     }
 
-    /// Runs `body` with an optional timeout. Errors and timeouts degrade to an
-    /// empty result so a single bad source can't take down the aggregate run;
-    /// `CancellationError` propagates so a parent-task cancel still reaches the
-    /// caller. `seconds <= 0` disables the timeout. Timeout events are
-    /// surfaced to stderr (not just os_log) so unattended LaunchAgent runs
-    /// leave a visible trail in `daily.err.log`.
+    /// Runs `body` with an optional timeout. Timeouts and read errors return
+    /// an empty project list with `incompleteSource` set so a single bad
+    /// source can't take down the aggregate run and callers know not to treat
+    /// the empty as a verified zero. `CancellationError` is rethrown from
+    /// inside this helper so a parent-task cancel still reaches the task-group
+    /// child; that child's outer catch then marks the source incomplete too
+    /// (same "we don't know" contract). `seconds <= 0` disables the timeout.
+    /// Timeout and failure events are surfaced to stderr (not just os_log) so
+    /// unattended LaunchAgent runs leave a visible trail in `daily.err.log`.
     ///
     /// Caveat: SQLite scans inside `CursorService` aren't cooperative
     /// cancellation points, so the body task can keep running in the background
     /// after the timeout fires. Subsequent calls into the same actor will
     /// serialize behind it.
     private static func runWithTimeout(
-        label: String,
+        source: ActivitySource,
+        dateString: String,
         seconds: Double,
         body: @escaping @Sendable () async throws -> [AgentProjectActivity]
-    ) async throws -> [AgentProjectActivity] {
+    ) async throws -> SourceReadResult {
+        let label = source.rawValue
         if seconds <= 0 {
             do {
-                return try await body()
+                return SourceReadResult(projects: try await body(), incompleteSource: nil)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                logger.warning("Failed to read \(label) activity: \(error.localizedDescription)")
-                return []
+                let message = "Failed to read \(label) activity for \(dateString): \(error.localizedDescription)"
+                logger.warning("\(message, privacy: .public)")
+                fputs("Warning: \(message)\n", stderr)
+                return SourceReadResult(projects: [], incompleteSource: source)
             }
         }
 
@@ -168,17 +216,19 @@ actor AggregatorService {
 
         switch result {
         case .success(let projects):
-            return projects
+            return SourceReadResult(projects: projects, incompleteSource: nil)
         case .failure(let error as TimedOut):
-            let message = "\(error.label) reader exceeded \(Int(error.seconds))s timeout; skipping for this date"
-            logger.warning("\(message)")
+            let message = "\(error.label) reader exceeded \(Int(error.seconds))s timeout for \(dateString); skipping"
+            logger.warning("\(message, privacy: .public)")
             fputs("Warning: \(message)\n", stderr)
-            return []
+            return SourceReadResult(projects: [], incompleteSource: source)
         case .failure(is CancellationError):
             throw CancellationError()
         case .failure(let error):
-            logger.warning("Failed to read \(label) activity: \(error.localizedDescription)")
-            return []
+            let message = "Failed to read \(label) activity for \(dateString): \(error.localizedDescription)"
+            logger.warning("\(message, privacy: .public)")
+            fputs("Warning: \(message)\n", stderr)
+            return SourceReadResult(projects: [], incompleteSource: source)
         }
     }
 
@@ -195,9 +245,18 @@ actor AggregatorService {
             return cached
         }
 
-        let rawAgentProjects = await readAllAgentProjects(for: date, options: options)
+        let (rawAgentProjects, incompleteSources) = await readAllAgentProjects(for: date, options: options)
         let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
         if agentProjects.isEmpty {
+            // Empty can mean "genuinely idle" or "a reader timed out before
+            // returning anything". Only the latter must not be mistaken for a
+            // verified zero — warn so daily.err.log names the date.
+            if !incompleteSources.isEmpty {
+                let names = incompleteSources.map(\.rawValue).joined(separator: ", ")
+                let message = "quick statistics for \(dateString) are incomplete (\(names)) — a reader timed out; zero is unverified"
+                logger.warning("\(message, privacy: .public)")
+                fputs("Warning: \(message)\n", stderr)
+            }
             return nil
         }
 
@@ -216,7 +275,7 @@ actor AggregatorService {
         let cursorCounts = counts(for: .cursor)
         let codexCounts = counts(for: .codex)
 
-        let statistics = DayStatistics(
+        var statistics = DayStatistics(
             date: date,
             ccProjectCount: claudeCounts.projects,
             ccSessionCount: claudeCounts.sessions,
@@ -229,10 +288,17 @@ actor AggregatorService {
             codexMessageCount: codexCounts.messages,
             projects: projectSummaries
         )
+        statistics.incompleteSources = incompleteSources
 
-        // Cache for past dates
+        // Never persist a zero (or under-count) that came from a timed-out
+        // reader — the cache would serve that wrong answer forever after.
         if StatisticsCache.shouldCache(date: date) {
-            await statisticsCache.save(statistics)
+            if incompleteSources.isEmpty {
+                await statisticsCache.save(statistics)
+            } else {
+                let names = incompleteSources.map(\.rawValue).joined(separator: ", ")
+                logger.warning("Skipping statistics cache write for \(dateString, privacy: .public); incomplete sources: \(names, privacy: .public)")
+            }
         }
 
         // Persist file date index

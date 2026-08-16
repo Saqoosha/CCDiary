@@ -17,14 +17,23 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 ///
 /// This actor caches `date → [bubbleKey]` to disk so subsequent date queries
 /// turn into a single `WHERE key IN (...)` query. Invalidated by DB mtime.
+/// After the first full build, refreshes are incremental via a rowid watermark
+/// so daily mtime bumps don't re-scan a multi-GB file.
 private actor CursorBubbleIndex {
     private var byDate: [String: [String]] = [:]
     private var isLoaded = false
-    /// True once `setIndex` has run for the current `lastDBModTime`. Lets us
-    /// distinguish "no Cursor activity ever" (zero bubbles, no rebuild needed)
-    /// from "cache empty because we haven't built yet" (rebuild required).
+    /// True once `setIndex`/`mergeIndex` has run for the current `lastDBModTime`.
+    /// Lets us distinguish "no Cursor activity ever" (zero bubbles, no rebuild
+    /// needed) from "cache empty because we haven't built yet" (rebuild required).
     private var hasBuilt = false
     private var lastDBModTime: TimeInterval = 0
+    /// Highest `cursorDiskKV.rowid` incorporated into `byDate`. Incremental
+    /// refreshes only scan rows at or above this watermark (`rowid >=`).
+    private var maxRowid: Int64 = 0
+    /// Unfiltered `COUNT(*)` of `bubbleId:%` rows at last scan time — not the
+    /// indexed-key count (the byte pre-filter drops most non-message bubbles).
+    /// Used to detect net deletions that leave the max-rowid watermark unchanged.
+    private var dbBubbleRowCount: Int = 0
 
     private static var cacheFileURL: URL {
         let fileManager = FileManager.default
@@ -42,13 +51,34 @@ private actor CursorBubbleIndex {
         }
 
         try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        return cacheDir.appendingPathComponent("cursor_bubble_index_v1.json")
+        return cacheDir.appendingPathComponent("cursor_bubble_index_v4.json")
     }
 
     /// Old v0 cache file. Removed on first load if present.
     private static var legacyCacheFileURL: URL {
         let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return cachesDir.appendingPathComponent("CCDiary/cursor_dates.json")
+    }
+
+    /// Pre-watermark (v1) cache. Removed on first load so it does not linger
+    /// next to the live file forever.
+    private static var legacyV1CacheFileURL: URL {
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return cachesDir.appendingPathComponent("CCDiary/cursor_bubble_index_v1.json")
+    }
+
+    /// Watermark-only (v2) cache — superseded by the count-gated refresh.
+    private static var legacyV2CacheFileURL: URL {
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return cachesDir.appendingPathComponent("CCDiary/cursor_bubble_index_v2.json")
+    }
+
+    /// v3 carried a DB-identity full-rescan trigger that could not fire on
+    /// mtime-preserving restores and misfired across APFS reboots — dropped
+    /// in v4. Removed on first load so it does not linger next to v4.
+    private static var legacyV3CacheFileURL: URL {
+        let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return cachesDir.appendingPathComponent("CCDiary/cursor_bubble_index_v3.json")
     }
 
     func getDates() -> Set<String> {
@@ -61,9 +91,61 @@ private actor CursorBubbleIndex {
         return byDate[date]
     }
 
-    func setIndex(_ newIndex: [String: [String]], dbModTime: TimeInterval) {
+    /// Rowid watermark for incremental scans. Purely a watermark — "never
+    /// built" is tracked by `hasBuiltIndex()`, not by `maxRowid == 0`.
+    func currentMaxRowid() -> Int64 {
+        ensureLoaded()
+        return maxRowid
+    }
+
+    /// Whether the index has been built at least once (disk load or scan).
+    /// Distinct from `maxRowid == 0`, which is legitimate when Cursor has
+    /// zero `bubbleId:%` rows.
+    func hasBuiltIndex() -> Bool {
+        ensureLoaded()
+        return hasBuilt
+    }
+
+    func currentDbBubbleRowCount() -> Int {
+        ensureLoaded()
+        return dbBubbleRowCount
+    }
+
+    func setIndex(
+        _ newIndex: [String: [String]],
+        dbModTime: TimeInterval,
+        maxRowid: Int64,
+        dbBubbleRowCount: Int
+    ) {
         byDate = newIndex
         lastDBModTime = dbModTime
+        self.maxRowid = maxRowid
+        self.dbBubbleRowCount = dbBubbleRowCount
+        isLoaded = true
+        hasBuilt = true
+        saveToDisk()
+    }
+
+    /// Appends newly-scanned keys onto the existing per-date arrays without
+    /// dropping older entries. De-duplicates with a Set per date — load-bearing
+    /// because REPLACE rewrites re-enter above the watermark with a **new**
+    /// rowid on every fill-in, so the incremental scan routinely re-lists
+    /// thousands of already-indexed keys each refresh.
+    func mergeIndex(
+        _ delta: [String: [String]],
+        dbModTime: TimeInterval,
+        maxRowid: Int64,
+        dbBubbleRowCount: Int
+    ) {
+        for (date, keys) in delta {
+            var seen = Set(byDate[date] ?? [])
+            for key in keys where seen.insert(key).inserted {
+                byDate[date, default: []].append(key)
+            }
+        }
+        lastDBModTime = dbModTime
+        self.maxRowid = maxRowid
+        self.dbBubbleRowCount = dbBubbleRowCount
         isLoaded = true
         hasBuilt = true
         saveToDisk()
@@ -81,8 +163,11 @@ private actor CursorBubbleIndex {
         guard !isLoaded else { return }
         loadFromDisk()
         isLoaded = true
-        // Drop the v0 file if it's still around — the v1 cache supersedes it.
+        // Drop superseded cache files so they don't linger next to v4.
         try? FileManager.default.removeItem(at: Self.legacyCacheFileURL)
+        try? FileManager.default.removeItem(at: Self.legacyV1CacheFileURL)
+        try? FileManager.default.removeItem(at: Self.legacyV2CacheFileURL)
+        try? FileManager.default.removeItem(at: Self.legacyV3CacheFileURL)
     }
 
     private func loadFromDisk() {
@@ -94,11 +179,13 @@ private actor CursorBubbleIndex {
             let stored = try JSONDecoder().decode(StoredCursorBubbleIndex.self, from: data)
             byDate = stored.byDate
             lastDBModTime = stored.dbModTime
+            maxRowid = stored.maxRowid
+            dbBubbleRowCount = stored.dbBubbleRowCount
             hasBuilt = true
             let bubbleCount = byDate.values.reduce(0) { $0 + $1.count }
             // logger.notice (not .info) — index load status should survive
             // log rotation so post-hoc debugging can confirm cache was used.
-            logger.notice("Loaded Cursor bubble index: \(self.byDate.count) dates, \(bubbleCount) bubbles")
+            logger.notice("Loaded Cursor bubble index: \(self.byDate.count) dates, \(bubbleCount) bubbles (maxRowid=\(self.maxRowid))")
         } catch is DecodingError {
             // Schema drift or genuinely corrupt JSON — safe to drop.
             logger.warning("Cursor bubble index incompatible/corrupt, rebuilding")
@@ -111,7 +198,12 @@ private actor CursorBubbleIndex {
     }
 
     private func saveToDisk() {
-        let stored = StoredCursorBubbleIndex(byDate: byDate, dbModTime: lastDBModTime)
+        let stored = StoredCursorBubbleIndex(
+            byDate: byDate,
+            dbModTime: lastDBModTime,
+            maxRowid: maxRowid,
+            dbBubbleRowCount: dbBubbleRowCount
+        )
         do {
             let data = try JSONEncoder().encode(stored)
             try data.write(to: Self.cacheFileURL)
@@ -123,6 +215,8 @@ private actor CursorBubbleIndex {
     private struct StoredCursorBubbleIndex: Codable {
         let byDate: [String: [String]]
         let dbModTime: TimeInterval
+        let maxRowid: Int64
+        let dbBubbleRowCount: Int
     }
 }
 
@@ -285,27 +379,125 @@ actor CursorService {
             return await bubbleIndex.getDates()
         }
 
-        // Rebuild cache from database
-        try await rebuildBubbleIndex(dbModTime: dbModTime)
+        // Rebuild/refresh cache from database (full or incremental via rowid watermark)
+        try await refreshBubbleIndex(dbModTime: dbModTime)
         return await bubbleIndex.getDates()
     }
 
-    /// Build the bubble index by scanning all `bubbleId:%` rows once. Reuses
-    /// the byte-pattern matcher from `getAllMessageDates` so we extract date
-    /// AND key in a single pass — no JSON parse per row.
-    private func rebuildBubbleIndex(dbModTime: TimeInterval) async throws {
+    /// Refresh the bubble index when the DB mtime changes.
+    ///
+    /// Rewrites re-enter **above** the watermark with a fresh rowid
+    /// (`UNIQUE ON CONFLICT REPLACE` deletes then inserts at a new higher
+    /// rowid), which is what makes the incremental scan safe. The per-date
+    /// `Set` dedupe in `mergeIndex` is therefore load-bearing — thousands of
+    /// rewritten bubbles reappear in each refresh. The index derives the date
+    /// from `createdAt` **and** membership from the byte pre-filter
+    /// (`"type":1`/`"type":2` present, `"text":""` absent). Most excluded
+    /// rows are permanently empty tool/thinking bubbles; a genuine message
+    /// fill-in re-enters above the watermark via REPLACE.
+    ///
+    /// Residual: a deletion exactly compensated by an equal or greater number
+    /// of new rows between two runs leaves the count non-decreasing, so that
+    /// specific interleaving is still missed until the next net deletion or
+    /// rowid regression. Do not attempt to close it.
+    private func refreshBubbleIndex(dbModTime: TimeInterval) async throws {
         let startTime = CFAbsoluteTimeGetCurrent()
         try openGlobalDB()
 
         let workspaces = getAllWorkspaces()
-        logger.notice("rebuildBubbleIndex: \(workspaces.count) workspaces found")
+        logger.notice("refreshBubbleIndex: \(workspaces.count) workspaces found")
 
-        let byDate = try collectBubbleKeysByDate()
-        await bubbleIndex.setIndex(byDate, dbModTime: dbModTime)
+        let hasBuilt = await bubbleIndex.hasBuiltIndex()
+        let storedMaxRowid = await bubbleIndex.currentMaxRowid()
+        let storedCount = await bubbleIndex.currentDbBubbleRowCount()
+        let dbMaxRowid = try maxBubbleRowid()
+        let currentCount = try countBubbleRows()
 
-        let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        let bubbleCount = byDate.values.reduce(0) { $0 + $1.count }
-        logger.notice("Built Cursor bubble index: \(byDate.count) dates, \(bubbleCount) bubbles in \(elapsed, format: .fixed(precision: 1))ms")
+        // Full rescan triggers (any one forces a rebuild):
+        // 1. never built  2. rowids went backwards  3. net deletion of bubbleId:% rows
+        let needsFullScan: Bool
+        let fullScanReason: String
+        if !hasBuilt {
+            needsFullScan = true
+            fullScanReason = "never built"
+        } else if dbMaxRowid < storedMaxRowid {
+            needsFullScan = true
+            fullScanReason = "rowid went backwards (\(dbMaxRowid) < \(storedMaxRowid))"
+        } else if currentCount < storedCount {
+            needsFullScan = true
+            fullScanReason = "bubble row count decreased (\(currentCount) < \(storedCount))"
+        } else {
+            needsFullScan = false
+            fullScanReason = ""
+        }
+
+        if needsFullScan {
+            // `.public` — the reason is a fixed diagnostic string, and os_log
+            // redacts interpolated values by default, which would render this
+            // as "full rescan: <private>" and defeat the whole log line.
+            logger.notice("Cursor bubble index full rescan: \(fullScanReason, privacy: .public)")
+            let collected = try collectBubbleKeysByDate(sinceRowid: 0)
+            await bubbleIndex.setIndex(
+                collected.byDate,
+                dbModTime: dbModTime,
+                maxRowid: collected.maxRowid,
+                dbBubbleRowCount: currentCount
+            )
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            let bubbleCount = collected.byDate.values.reduce(0) { $0 + $1.count }
+            logger.notice("Built Cursor bubble index (full): \(collected.byDate.count) dates, \(bubbleCount) bubbles, scanned to rowid \(collected.maxRowid) in \(elapsed, format: .fixed(precision: 1))ms")
+        } else {
+            let collected = try collectBubbleKeysByDate(sinceRowid: storedMaxRowid)
+            await bubbleIndex.mergeIndex(
+                collected.byDate,
+                dbModTime: dbModTime,
+                maxRowid: collected.maxRowid,
+                dbBubbleRowCount: currentCount
+            )
+            let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+            let deltaCount = collected.byDate.values.reduce(0) { $0 + $1.count }
+            logger.notice("Refreshed Cursor bubble index (incremental): +\(deltaCount) bubbles since rowid \(storedMaxRowid) → \(collected.maxRowid) in \(elapsed, format: .fixed(precision: 1))ms")
+        }
+    }
+
+    /// Cheap watermark probe — `MAX(rowid)` over bubble keys only. Used to
+    /// decide full vs incremental without touching value blobs.
+    private func maxBubbleRowid() throws -> Int64 {
+        let query = "SELECT MAX(rowid) FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed(errorMsg)
+        }
+        defer { sqlite3_finalize(stmt) }
+        // Returning 0 on a non-ROW step only forces a full scan when
+        // `storedMaxRowid > 0` (the `dbMaxRowid < storedMaxRowid` branch).
+        // Log the errmsg so a surprising 0 is still explainable.
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            logger.warning("maxBubbleRowid step failed (\(errorMsg, privacy: .public)) — treating as 0")
+            return 0
+        }
+        if sqlite3_column_type(stmt, 0) == SQLITE_NULL { return 0 }
+        return sqlite3_column_int64(stmt, 0)
+    }
+
+    /// Unfiltered `COUNT(*)` of `bubbleId:%` rows. Affordable on every refresh
+    /// (~25 ms on a 3.4 GB DB, measured 2026-08-16); used to detect net
+    /// deletions that leave the max-rowid watermark unchanged.
+    private func countBubbleRows() throws -> Int {
+        let query = "SELECT COUNT(*) FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed(errorMsg)
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            let errorMsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed(errorMsg)
+        }
+        return Int(sqlite3_column_int64(stmt, 0))
     }
 
     /// Get database modification time
@@ -318,17 +510,29 @@ actor CursorService {
     }
 
     /// Single-pass byte-pattern scan that builds a `date → [bubbleKey]` map.
-    /// Reads `key` and `value` together so we never have to revisit blobs.
-    /// JSON parsing is deferred to `parseBubbles(...)` — that runs only on the
-    /// small subset of bubbles for the queried date.
+    /// Reads `rowid`, `key`, and `value` together so we never have to revisit
+    /// blobs. JSON parsing is deferred to `parseBubbles(...)` — that runs only
+    /// on the small subset of bubbles for the queried date.
+    ///
+    /// Pass `sinceRowid: 0` for a full scan; otherwise only rows with
+    /// `rowid >= sinceRowid` are visited. The `>=` (not `>`) is deliberate
+    /// overlap covering rowid reuse at exactly the watermark — not an
+    /// off-by-one. The per-date `Set` dedupe in `mergeIndex` absorbs the one
+    /// redundant row. Returns the largest rowid actually seen so the caller
+    /// can advance the watermark.
+    ///
+    /// Throwing on a non-`SQLITE_DONE` termination is deliberate: it reaches
+    /// `runWithTimeout`'s generic failure branch, which marks Cursor
+    /// incomplete, instead of silently persisting a truncated index and
+    /// advancing the watermark past unread rows.
     ///
     /// Date keys are in **the user's local time zone**, matching how
     /// `getGlobalMessagesByComposer(for:)` resolves the requested date via
     /// `Calendar.current.startOfDay(for:)`. Naively prefixing the ISO
     /// `createdAt` (which is always UTC `Z`) would split bubbles created
     /// between 00:00 and the local UTC offset onto the wrong day.
-    private func collectBubbleKeysByDate() throws -> [String: [String]] {
-        let query = "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
+    private func collectBubbleKeysByDate(sinceRowid: Int64) throws -> (byDate: [String: [String]], maxRowid: Int64) {
+        let query = "SELECT rowid, key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%' AND rowid >= ? ORDER BY rowid"
         var stmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(globalDB, query, -1, &stmt, nil) == SQLITE_OK else {
@@ -337,7 +541,10 @@ actor CursorService {
         }
         defer { sqlite3_finalize(stmt) }
 
+        sqlite3_bind_int64(stmt, 1, sinceRowid)
+
         var byDate: [String: [String]] = [:]
+        var maxRowid = sinceRowid
 
         // Byte patterns for the fast pre-filter.
         let type1Pattern = Data("\"type\":1".utf8)
@@ -345,10 +552,19 @@ actor CursorService {
         let createdAtPattern = Data("\"createdAt\":\"".utf8)
         let emptyTextPattern = Data("\"text\":\"\"".utf8)
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let keyPtr = sqlite3_column_text(stmt, 0),
-                  let valuePtr = sqlite3_column_blob(stmt, 1) else { continue }
-            let valueLength = Int(sqlite3_column_bytes(stmt, 1))
+        // `defer` advances the cursor on every exit from the body, including the
+        // six `continue`s below. Hand-written `sqlite3_step` calls before each
+        // one would be a silent infinite loop the day a seventh filter is added.
+        var stepResult = sqlite3_step(stmt)
+        while stepResult == SQLITE_ROW {
+            defer { stepResult = sqlite3_step(stmt) }
+
+            let rowid = sqlite3_column_int64(stmt, 0)
+            if rowid > maxRowid { maxRowid = rowid }
+
+            guard let keyPtr = sqlite3_column_text(stmt, 1),
+                  let valuePtr = sqlite3_column_blob(stmt, 2) else { continue }
+            let valueLength = Int(sqlite3_column_bytes(stmt, 2))
             let data = Data(bytes: valuePtr, count: valueLength)
 
             guard data.range(of: type1Pattern) != nil || data.range(of: type2Pattern) != nil else { continue }
@@ -367,8 +583,12 @@ actor CursorService {
             let key = String(cString: keyPtr)
             byDate[localDate, default: []].append(key)
         }
+        guard stepResult == SQLITE_DONE else {
+            let errmsg = String(cString: sqlite3_errmsg(globalDB))
+            throw CursorServiceError.queryFailed("sqlite3_step returned \(stepResult): \(errmsg)")
+        }
 
-        return byDate
+        return (byDate, maxRowid)
     }
 
     /// Get all composers from a workspace (without date filtering)
@@ -778,7 +998,7 @@ actor CursorService {
         // Make sure the persistent date → bubbleKeys index is current.
         let dbModTime = getDBModTime()
         if await bubbleIndex.needsRebuild(currentDBModTime: dbModTime) {
-            try await rebuildBubbleIndex(dbModTime: dbModTime)
+            try await refreshBubbleIndex(dbModTime: dbModTime)
         }
 
         guard let keys = await bubbleIndex.getKeys(for: dateString), !keys.isEmpty else {

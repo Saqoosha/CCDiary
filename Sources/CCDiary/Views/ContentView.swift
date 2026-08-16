@@ -349,7 +349,8 @@ final class DiaryViewModel {
             let activity = DailyActivity(
                 date: fullActivity.date,
                 projects: filteredProjects,
-                totalInputs: fullActivity.totalInputs
+                totalInputs: fullActivity.totalInputs,
+                incompleteSources: fullActivity.incompleteSources
             )
 
             if activity.projects.isEmpty {

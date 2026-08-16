@@ -105,10 +105,14 @@ enum HostStatsMergeService {
         }
 
         allProjects.sort { $0.timeRange.lowerBound < $1.timeRange.lowerBound }
+        // Carry local incompleteness through — the memberwise rebuild would
+        // otherwise reset it to [] and a later cloud-upload guard could miss
+        // that this Mac's read was untrustworthy.
         return DailyActivity(
             date: local.date,
             projects: allProjects,
-            totalInputs: local.totalInputs + remoteInputs
+            totalInputs: local.totalInputs + remoteInputs,
+            incompleteSources: local.incompleteSources
         )
     }
 
@@ -128,6 +132,7 @@ enum HostStatsMergeService {
         excludeProjectSubstrings: [String] = []
     ) -> DayStatistics {
         var merged = local
+        let localIncomplete = local.incompleteSources
         for rawRemote in remotes {
             let remote = filterExcludedProjects(rawRemote, substrings: excludeProjectSubstrings)
             merged = DayStatistics(
@@ -144,6 +149,12 @@ enum HostStatsMergeService {
                 projects: mergeProjectSummaries(merged.projects, remote.projects)
             )
         }
+        // `DayStatistics`' explicit init takes no `incompleteSources` (the
+        // property defaults to []), so every rebuild in the loop above drops
+        // it. Restore the local Mac's flag once, after the loop. No consumer
+        // reads it post-merge today — this is plumbing for a future guard, not
+        // load-bearing. Behaviour is identical to assigning inside the loop.
+        merged.incompleteSources = localIncomplete
         return merged
     }
 

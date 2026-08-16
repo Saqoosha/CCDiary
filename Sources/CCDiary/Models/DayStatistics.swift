@@ -21,6 +21,12 @@ struct DayStatistics: Sendable, Codable {
 
     let projects: [ProjectSummary]
 
+    /// Sources whose read timed out or failed for this date. Deliberately
+    /// omitted from `CodingKeys` so it never lands in the on-disk statistics
+    /// cache or the cloud payload — a timeout is a runtime signal, not a
+    /// durable fact about the day.
+    var incompleteSources: [ActivitySource] = []
+
     // Custom coding keys
     enum CodingKeys: String, CodingKey {
         case date, ccProjectCount, ccSessionCount, ccMessageCount
@@ -45,6 +51,19 @@ struct DayStatistics: Sendable, Codable {
         self.codexSessionCount = codexSessionCount
         self.codexMessageCount = codexMessageCount
         self.projects = projects
+    }
+
+    /// All-zero statistics for a date. Used as the merge seed when this Mac had
+    /// no local activity but remote hosts did — without it the whole merge is
+    /// skipped and the cloud row lands with zeros.
+    static func empty(for date: Date) -> DayStatistics {
+        DayStatistics(
+            date: date,
+            ccProjectCount: 0, ccSessionCount: 0, ccMessageCount: 0,
+            cursorProjectCount: 0, cursorSessionCount: 0, cursorMessageCount: 0,
+            codexProjectCount: 0, codexSessionCount: 0, codexMessageCount: 0,
+            projects: []
+        )
     }
 
     init(from decoder: Decoder) throws {
