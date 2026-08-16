@@ -39,6 +39,7 @@ pkill -f CCDiary; xcodebuild -scheme CCDiary -configuration Debug -derivedDataPa
 - **Run `xcodegen generate`** after adding new source files
 - Build output goes to `build/Build/Products/Debug/`
 - Statistics cache stored in `~/Library/Caches/CCDiary/statistics/`
+- **`xcodegen generate` reorders a line in `CCDiary.xcodeproj/project.pbxproj` non-deterministically.** The diff is byte-identical content at a different position — no semantic change. `install-daily-launch-agent.sh` runs xcodegen, so every install leaves this even when you changed nothing. **Check the diff before discarding it:** `jj restore --from main CCDiary.xcodeproj/project.pbxproj` reverts the *whole file*, so if you also added a source file, that restore silently un-registers it. Only reach for it once `jj diff CCDiary.xcodeproj/project.pbxproj` shows nothing but the reorder.
 
 ## Debugging
 
@@ -149,9 +150,14 @@ substrings (case-insensitive). The CLI exposes this via `--exclude-project NAME`
 `CLIOptions.defaultExcludeSubstrings` in [Tools/CCDiaryCLI/main.swift](Tools/CCDiaryCLI/main.swift)
 unless `--no-default-exclude` is passed:
 
-- `observer-sessions` — `claude-mem-observer-sessions` writes pathologically
-  large JSONLs with no useful diary content.
-- `claude-mem` — same family.
+- `observer-sessions` — `claude-mem-observer-sessions` wrote pathologically
+  large JSONLs (1,056 files, 5.0 GB, up to 17 MB each) with no useful diary
+  content: they were an observer bot's synthetic sessions, not Saqoosha's
+  conversations. **claude-mem was decommissioned 2026-08-16 and those JSONLs
+  deleted**, so nothing matches this today. Kept anyway — the entry costs
+  nothing and still applies if an old machine or a restored backup surfaces
+  them.
+- `claude-mem` — same family, same status.
 - `ClaudeProbe` — **CodexBar.app** (`com.steipete.codexbar`, Peter Steipete's
   menu-bar status app) repeatedly spawns `claude` CLI with `cwd =
   ~/Library/Application Support/CodexBar/ClaudeProbe` and slash commands like
@@ -203,6 +209,30 @@ Multiple optimizations reduce diary generation time from ~14s to ~2s:
 - **Date Index** (`~/Library/Caches/CCDiary/date_index_v3.json`): Maps dates to files containing that date (v3: automated sessions excluded)
 - **Statistics Cache** (`~/Library/Caches/CCDiary/statistics/`): Cached stats for past dates
 - **Cursor Bubble Index** (`~/Library/Caches/CCDiary/cursor_bubble_index_v4.json`): Maps dates to `cursorDiskKV` bubble keys
+
+**Reference measurements for a Cursor index change** — one snapshot of one
+machine (Saqoosha's MBP, 3.4 GB `state.vscdb`, 2026-08-16), not fixed
+constants. `state.vscdb` grows with every Cursor session, so all of these drift
+upward on their own; a different number proves nothing by itself. Use them the
+only way they are valid: **measure before your change and after it, on the same
+machine and the same DB**, and investigate a difference between those two.
+
+| Probe | Cost |
+|---|---|
+| `SELECT MAX(rowid) … WHERE key LIKE 'bubbleId:%'` | 7 ms |
+| `SELECT COUNT(*) … WHERE key LIKE 'bubbleId:%'` | 25 ms (92,578 rows) |
+| Full index build | ~10 s |
+
+The index held 85 dates / 19,008 bubbles at `maxRowid` 2,543,366 and
+`dbBubbleRowCount` 92,578. The useful shape here is the *ratio*, which does not
+drift: the two probes stay in the tens of milliseconds while a full build stays
+around 10 s, so a probe that suddenly costs seconds means it stopped being a
+seek.
+
+For an end-to-end check, prefer a **past** date, whose inputs no longer change:
+`ccdiary-cli generate --date 2026-08-14 --dry-run` read 2 projects / 174
+messages from Cursor. That number is stable as long as those chats are not
+deleted — which the deletion trigger above is designed to notice.
 
 #### Cursor bubble index is incremental (v4)
 
@@ -278,6 +308,37 @@ whatever they have with a warning.
 **Statistics cache entries written before this change may still hold unverified
 zeros.** `rm -rf ~/Library/Caches/CCDiary/statistics/` to recompute.
 
+##### Which reader failures actually set `incompleteSources`
+
+The `.idle` / `.unavailable` split is only as good as the readers' honesty, and
+they are not uniformly honest. Verify before assuming either way — this has been
+gotten wrong twice, in both directions.
+
+- **DB-open failures throw, and are reported correctly.** Cursor's
+  `getActivityForDate` opens with `guard isAvailable() else { return [] }`, but
+  `isAvailable()` is a bare `fileExists`, so that guard only catches *Cursor not
+  installed* — where empty is the right answer. A DB that exists but cannot be
+  opened (TCC denial, corruption, lock) falls through to
+  `getGlobalActivityForDate` → `try openGlobalDB()`, throws, and
+  `runWithTimeout` marks the source incomplete.
+- **Directory listings swallow.** `CodexActivityReader.rolloutFiles(in:)` and
+  `CursorService.getAllWorkspaces()` both do
+  `guard let contents = try? FileManager.default.contentsOfDirectory(…) else { return [] }`.
+  A present-but-unreadable directory yields zero files with no throw and no log,
+  so the source reports "nothing" and the day reads as idle or as a complete
+  measurement that is silently short one source. Codex is the exposed one —
+  Cursor's legacy workspace path is only consulted after the global read already
+  came back empty. Tracked in #25.
+- `ClaudeCodeActivityReader` does not have this shape (checked): its bare
+  `return []` is a genuine "no matching project groups", and its per-file work
+  runs in a `withThrowingTaskGroup` that propagates.
+
+Also worth knowing: `getQuickStatistics` is declared `async throws` but its body
+contains no `try` at all, so it cannot currently throw. The `catch` blocks and
+`statsComputeFailed` flags in `runGenerate` / `runSyncCloud` are therefore
+unreachable today. They are kept deliberately — deleting them would silently
+reintroduce the seed-a-zero bug the day the function starts throwing.
+
 ## Benchmark Tool
 
 A CLI benchmark tool is available for performance testing:
@@ -352,6 +413,16 @@ TCC prompt would silently stall the run. Two things keep it dialog-free:
   (G5G54TCH8W)` so the requirement stays constant across rebuilds. Override via
   `CCDIARY_SIGN_IDENTITY`; forks without a Developer ID can use any persistent
   self-signed code-signing certificate.
+- **`install-daily-launch-agent.sh` must be run from the machine's own GUI
+  session — it cannot be driven over SSH.** `codesign` with the Developer ID
+  identity fails there with `errSecInternalComponent`, because an SSH session's
+  login keychain is locked and the private key is unreachable. The script then
+  refuses to install (correctly — an ad-hoc-signed agent would reset TCC and
+  Keychain grants on every rebuild) and leaves a `ccdiary-cli.XXXXXX` temp file
+  in the install dir that it does not clean up; delete it by hand. Do NOT try to
+  work around this with `security unlock-keychain`. Deploying to the other Mac
+  means: update the repo and build over SSH if you like, then run the install
+  script in a terminal on that machine.
 
 Full Disk Access is **not** required now that Documents is avoided. If you ever do hit a
 TCC prompt (a future feature reading a protected location), grant it once via
@@ -410,7 +481,7 @@ chmod 600 ~/.config/ccdiary/secrets
 
 ## Cloud Archive (`web/`)
 
-The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated diary into D1 and presents a calendar + stats heatmap at `https://ccdiary.saqoo.sh`. Browser auth is a single password at `/login` (secrets `CCDIARY_SITE_PASSWORD` + `CCDIARY_SESSION_SECRET`); diary pages and `GET /api/diaries` need that session cookie. `POST /api/diaries` uses the ingest bearer token only.
+The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated diary into D1 and presents a calendar + stats heatmap at `https://ccdiary.saqoo.sh`. Browser auth is a single password at `/login` (secrets `CCDIARY_SITE_PASSWORD` + `CCDIARY_SESSION_SECRET`), and that session cookie gates the diary **pages**. The API is separate: middleware puts `/api/diaries` and `/api/host-stats` behind the ingest bearer token for every method, so the cookie does not open them.
 
 - Endpoint storage (priority): `--cloud-endpoint URL` → `CCDIARY_CLOUD_ENDPOINT` env → Keychain `sh.saqoo.CCDiary.cloud-endpoint`
 - Token storage (priority): `CCDIARY_CLOUD_TOKEN` env → Keychain `sh.saqoo.CCDiary.cloud-token`
@@ -434,24 +505,8 @@ The Astro + Cloudflare Workers app under [`web/`](web/) mirrors every generated 
   are separate paths; fixing one does not fix the other. Idle is now
   `QuickStatisticsResult.idle` (distinct from `.unavailable`); do not seed
   `.empty` from `.unavailable`.
+- **Omitting the `stats` block preserves existing columns only on UPDATE, never on INSERT.** `upsertDiary` gates every stats column on a `hasStats` sentinel (`CASE WHEN ?16 = 1 THEN excluded.x ELSE diaries.x END`) — but that lives solely in the `ON CONFLICT(date) DO UPDATE` arm. The INSERT arm binds `stats?.sessions ?? 0`, `stats?.messages ?? 0`, `stats?.project_count ?? 0`. So withholding stats to avoid publishing an unverified number still writes zeros on a **first-time** ingest for that date — which the 04:00 `generate --yesterday` run always is. The CLI warns when it does this; the row is still wrong. Tracked in #27.
+- Endpoint auth, which matters when debugging from outside the browser — [web/src/middleware.ts](web/src/middleware.ts) gates `/api/diaries` and `/api/host-stats` on `checkBearer` for **every** method, so a browser session cookie gets 401 on both no matter how you're logged in; query them with `Authorization: Bearer $CCDIARY_CLOUD_TOKEN`. `GET /api/stats` and `/stats.svg` are **public**. Diary pages are the cookie-gated surface: `/<date>` returns **404 when unauthenticated**, so a 404 there means "not logged in", not "no diary for that date". The heatmap in `/api/stats` reads the `diaries` table only — `host_stats` rows never appear in it.
 - Local dev: `cd web && bun install && bun run db:apply:local && bun run dev` (server at `localhost:4321`). Use `dev-local-token` from `.dev.vars.example` for local POSTs.
 - Full deploy runbook: [docs/WEB_DEPLOYMENT.md](docs/WEB_DEPLOYMENT.md).
-
-
-<claude-mem-context>
-# Memory Context
-
-# [CCDiary] recent context, 2026-05-03 9:18pm GMT+9
-
-Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision
-Format: ID TIME TYPE TITLE
-Fetch details: get_observations([IDs]) | Search: mem-search skill
-
-Stats: 2 obs (517t read) | 24,968t work | 98% savings
-
-### Apr 25, 2026
-142 10:46a ⚖️ Automated Daily Diary System Architecture Plan
-143 " 🔵 CCDiary Project Repository Located at ~/Documents/repos/Personal/CCDiary
-
-Access 25k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
