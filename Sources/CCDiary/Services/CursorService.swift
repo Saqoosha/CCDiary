@@ -905,8 +905,10 @@ actor CursorService {
             // Sort all messages by timestamp
             allMessages.sort { ($0.timestamp ?? .distantPast) < ($1.timestamp ?? .distantPast) }
 
-            // Extract project name from path
-            let projectName = (projectPath as NSString).lastPathComponent
+            let projectName = AgentActivityUtilities.projectName(
+                from: projectPath,
+                fallback: (projectPath as NSString).lastPathComponent
+            )
 
             activities.append(CursorProjectActivity(
                 projectPath: projectPath,
