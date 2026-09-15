@@ -83,6 +83,7 @@ xcodegen generate --spec "${ROOT_DIR}/project.yml"
 
 echo "==> Building ccdiary-cli (Release)"
 xcodebuild \
+  -project "${ROOT_DIR}/CCDiary.xcodeproj" \
   -scheme ccdiary-cli \
   -configuration Release \
   -derivedDataPath "${ROOT_DIR}/build" \
