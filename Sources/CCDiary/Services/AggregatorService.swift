@@ -44,7 +44,7 @@ actor AggregatorService {
         let dateString = DateFormatting.iso.string(from: date)
 
         let (rawAgentProjects, incompleteSources) = await readAllAgentProjects(for: date, options: options)
-        let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
+        let agentProjects = Self.mergeSameNamedProjects(Self.filterExcludedProjects(rawAgentProjects, options: options))
         var allProjects = agentProjects.map {
             $0.toProjectActivity(
                 maxContentLength: options.maxContentLength,
@@ -151,6 +151,50 @@ actor AggregatorService {
                 project.path.localizedCaseInsensitiveContains(sub) ||
                     project.name.localizedCaseInsensitiveContains(sub)
             }
+        }
+    }
+
+    /// Folds projects with the same `(source, name)` — case-insensitive — into one
+    /// `AgentProjectActivity`, so a repository and its worktrees are one project.
+    /// The key is the name alone: distinct repositories that share a directory
+    /// name merge too, the same trade-off `HostStatsMergeService` makes. The
+    /// representative (whose `path` reaches statistics and the cloud) is the
+    /// earliest non-worktree member; members are ordered by first activity so
+    /// the result is the same on every run.
+    static func mergeSameNamedProjects(_ projects: [AgentProjectActivity]) -> [AgentProjectActivity] {
+        var groupOrder: [String] = []
+        var groups: [String: [AgentProjectActivity]] = [:]
+
+        for project in projects {
+            let key = "\(project.source.rawValue)|\(project.name.lowercased())"
+            if groups[key] == nil {
+                groupOrder.append(key)
+            }
+            groups[key, default: []].append(project)
+        }
+
+        return groupOrder.compactMap { key -> AgentProjectActivity? in
+            guard let unordered = groups[key], let first = unordered.first else { return nil }
+            guard unordered.count > 1 else { return first }
+
+            let members = unordered.sorted {
+                ($0.timeRange.lowerBound, $0.path) < ($1.timeRange.lowerBound, $1.path)
+            }
+            let representative = members.first { !AgentActivityUtilities.isWorktreePath($0.path) } ?? members[0]
+            let messages = members.flatMap(\.messages).sorted { $0.timestamp < $1.timestamp }
+            let sessionIds = members.reduce(into: Set<String>()) { $0.formUnion($1.sessionIds) }
+            let lower = members.map(\.timeRange.lowerBound).min() ?? representative.timeRange.lowerBound
+            let upper = members.map(\.timeRange.upperBound).max() ?? representative.timeRange.upperBound
+
+            return AgentProjectActivity(
+                source: representative.source,
+                path: representative.path,
+                name: representative.name,
+                userInputs: members.flatMap(\.userInputs),
+                messages: messages,
+                sessionIds: sessionIds,
+                timeRange: lower...upper
+            )
         }
     }
 
@@ -268,7 +312,7 @@ actor AggregatorService {
         }
 
         let (rawAgentProjects, incompleteSources) = await readAllAgentProjects(for: date, options: options)
-        let agentProjects = Self.filterExcludedProjects(rawAgentProjects, options: options)
+        let agentProjects = Self.mergeSameNamedProjects(Self.filterExcludedProjects(rawAgentProjects, options: options))
         if agentProjects.isEmpty {
             // Empty can mean "genuinely idle" or "a reader did not complete
             // before returning anything". Only the latter must not be mistaken

@@ -110,6 +110,54 @@ var selectedDate: Date = DateFormatting.iso.date(from: "2026-01-22") ?? Date()
   - `SlackService` - Posts generated diaries to Slack
   - `CloudIngestService` - Pushes diaries (with stats) to the Cloudflare Worker at [`web/`](web/)
 
+### Git worktrees resolve to their parent project
+
+A session whose cwd is a git worktree is attributed to the repository the
+worktree belongs to, not to the worktree directory. Claude Code's
+`EnterWorktree` puts worktrees at `~/.claude/worktrees/<Project>/<branch>`
+(earlier versions used `<Repo>/.claude/worktrees/<branch>` inside the repo), so
+without this every worktree session showed up as its own project named after
+the branch (`roster-live-flag` instead of `Canopy-Mobile`).
+
+`AgentActivityUtilities.worktreeInfo(for:)` in
+[Sources/CCDiary/Models/AgentActivity.swift](Sources/CCDiary/Models/AgentActivity.swift)
+is the single detection site, and `projectName(from:fallback:)` on top of it is
+the single naming site for all three sources (Claude Code via
+`HistoryService.getProjectName`, Cursor, Codex). Detection order:
+
+1. `<cwd>/.git` is **authoritative when present**: a directory means a plain
+   checkout (never a worktree, whatever the path looks like); a file containing
+   `gitdir: <repo>/.git/worktrees/<name>` means a linked worktree of `<repo>`.
+   Relative `gitdir:` values (`git worktree add --relative-paths`) are resolved
+   against the worktree directory. Submodules also use a `.git` file but point
+   at `.git/modules/`, so they do not match. The probe is skipped for paths under
+   `~/Documents`, `~/Desktop` and `~/Downloads`: the 04:00 LaunchAgent is
+   headless and a TCC prompt there would stall it (see "Unattended runs").
+2. Path shape, only when `.git` is absent (the worktree was deleted):
+   `<dot-dir>/worktrees/<Project>/…/<name>` with the dot-dir directly under the
+   home directory (`~/.claude`, `~/.cursor`, `~/.superset`) → `<Project>`;
+   `<Repo>/.claude/worktrees/<name>` → `<Repo>`; `<Repo>/worktrees/<name>` or
+   `<Repo>/.worktrees/<name>` → `<Repo>`. Matched on path components, never by
+   substring; a session started in a subdirectory of the worktree matches too.
+
+`AggregatorService.mergeSameNamedProjects` then folds projects with the same
+`(source, name)` — case-insensitive — into one `AgentProjectActivity` (path =
+the earliest non-worktree member if any, messages re-sorted, session IDs
+unioned, time range widened) so a day spent in three Canopy worktrees is one
+`### Canopy` section on that Mac, not three. The key is the name alone:
+two unrelated repositories that share a directory name (`~/repos/Work/web` and
+`~/repos/Personal/web`) merge as well. That is deliberate — the diary prompt
+already collapsed same-named sections, and `HostStatsMergeService` makes the
+same trade-off across hosts — but it does lower `project_count` on such days.
+Other hosts' digests are appended by `mergeDailyActivity`, not folded.
+
+The date index is unaffected (it maps dates to files, not names), but the
+**Statistics Cache and already-uploaded rows keep the old per-worktree project
+counts**. To repair a date: `rm -rf ~/Library/Caches/CCDiary/statistics/` on
+each Mac, `push-stats --date` there (fixes `host_stats`), then on the primary
+Mac `sync-cloud --from D --to D --merge-cloud-stats --compute-stats` (fixes the
+`diaries` row).
+
 ### Automated session exclusion
 
 Claude Code sessions launched by background automation are excluded from

@@ -292,7 +292,10 @@ actor CodexService {
 
             activities.append(CodexProjectActivity(
                 projectPath: projectPath,
-                projectName: (projectPath as NSString).lastPathComponent,
+                projectName: AgentActivityUtilities.projectName(
+                    from: projectPath,
+                    fallback: (projectPath as NSString).lastPathComponent
+                ),
                 messages: sortedMessages,
                 sessionCount: project.sessionIds.count,
                 timeRangeStart: start,

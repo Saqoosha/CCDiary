@@ -104,9 +104,12 @@ actor HistoryService {
         return groups
     }
 
-    /// Extract project name from path
+    /// Project name for a session cwd; worktrees resolve to their parent repository.
     static func getProjectName(_ projectPath: String) -> String {
-        (projectPath as NSString).lastPathComponent
+        AgentActivityUtilities.projectName(
+            from: projectPath,
+            fallback: (projectPath as NSString).lastPathComponent
+        )
     }
 }
 
