@@ -45,6 +45,13 @@ private actor DateIndex {
         return cachedModTime == modTime
     }
 
+    /// Dates recorded for a file, or nil when it is not indexed at this modTime
+    func dates(for path: String, ifModTime modTime: TimeInterval) -> Set<String>? {
+        ensureLoaded()
+        guard fileModTimes[path] == modTime else { return nil }
+        return fileToDates[path] ?? []
+    }
+
     /// Index a file's dates
     func indexFile(_ path: String, modTime: TimeInterval, dates: Set<String>) {
         ensureLoaded()
@@ -441,8 +448,10 @@ actor ConversationService {
 
         for dir in projectDirs where dir.hasDirectoryPath {
             let candidates = Self.filesModified(since: modifiedSince, in: (try? Self.findJSONLFiles(in: dir)) ?? [])
-            let files = Self.filterAutomatedSessionFiles(candidates)
-            let matchingFiles = files.filter { Self.fileContainsAnyDatePrefix($0, datePrefixes: datePrefixes) }
+            var matchingFiles: [URL] = []
+            for file in candidates where await !indexedDates(for: file).isDisjoint(with: datePrefixes) {
+                matchingFiles.append(file)
+            }
             guard !matchingFiles.isEmpty else { continue }
 
             let projectPath = Self.inferProjectPath(from: matchingFiles, datePrefixes: datePrefixes)
@@ -450,7 +459,23 @@ actor ConversationService {
             result[projectPath, default: []].append(contentsOf: matchingFiles)
         }
 
+        await dateIndex.saveToDiskIfNeeded()
         return result
+    }
+
+    /// UTC dates a file holds, from the date index when its mtime is unchanged; otherwise
+    /// scanned and indexed. Automated sessions index as [], matching buildFullDateIndex.
+    private func indexedDates(for file: URL) async -> Set<String> {
+        let modTime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate?.timeIntervalSince1970
+        if let modTime, let dates = await dateIndex.dates(for: file.path, ifModTime: modTime) {
+            return dates
+        }
+        let dates = Self.isAutomatedSessionFile(file) ? [] : Self.extractDatesFromFile(file)
+        if let modTime {
+            await dateIndex.indexFile(file.path, modTime: modTime, dates: dates)
+        }
+        return dates
     }
 
     /// Read conversation entries from a file
@@ -1277,32 +1302,6 @@ actor ConversationService {
             }
             return modified >= date
         }
-    }
-
-    private nonisolated static func fileContainsAnyDatePrefix(
-        _ fileURL: URL,
-        datePrefixes: Set<String>
-    ) -> Bool {
-        guard let handle = FileHandle(forReadingAtPath: fileURL.path) else {
-            return false
-        }
-        defer { try? handle.close() }
-
-        let needles = datePrefixes.map { Data("\"timestamp\":\"\($0)".utf8) }
-        var carry = Data()
-
-        while let chunk = try? handle.read(upToCount: 512 * 1024), !chunk.isEmpty {
-            var data = carry
-            data.append(chunk)
-            if needles.contains(where: { data.range(of: $0) != nil }) {
-                return true
-            }
-
-            let carryCount = min(64, data.count)
-            carry = data.suffix(carryCount)
-        }
-
-        return false
     }
 
     private struct ProjectPathProbe: Decodable {
