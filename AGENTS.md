@@ -184,7 +184,11 @@ parent session file. The filter is unconditional and lives in
 applied at all three JSONL discovery sites: `buildFullDateIndex` (automated
 files are indexed with an empty date set — so **changing detection logic
 requires bumping the date-index version**), `findConversationFiles`, and
-`findConversationFilesForDateRange`. Note: cached statistics computed before
+`findConversationFilesForDateRange`. The last one answers from the same date
+index: a file whose mtime matches its entry is not re-probed, so the version
+bump covers it too. It never caches an automated *subagent*, though — its
+verdict comes from the parent and can flip (an `sdk-cli` session gaining a
+second prompt) without the subagent's own mtime changing. Note: cached statistics computed before
 this feature still include automated sessions; clear
 `~/Library/Caches/CCDiary/statistics/` to recompute.
 
