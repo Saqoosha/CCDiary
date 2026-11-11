@@ -75,15 +75,23 @@ const AGENT_NAMES: Record<keyof SourcesBreakdown, string> = {
 
 function sourceMessages(row: StatsRow): [string, number][] {
   if (!row.sources_json) return [];
-  let sources: SourcesBreakdown;
+  let sources: unknown;
   try {
-    sources = JSON.parse(row.sources_json) as SourcesBreakdown;
-  } catch {
-    console.warn(`stats: unparseable sources_json for ${row.date}`);
+    sources = JSON.parse(row.sources_json);
+  } catch (err) {
+    console.warn(`stats: unparseable sources_json for ${row.date}`, err);
     return [];
   }
+  if (typeof sources !== 'object' || sources === null || Array.isArray(sources)) {
+    console.warn(`stats: sources_json for ${row.date} is not an object`);
+    return [];
+  }
+  const breakdown = sources as SourcesBreakdown;
   return (Object.keys(AGENT_NAMES) as (keyof SourcesBreakdown)[])
-    .map((key): [string, number] => [AGENT_NAMES[key], sources[key]?.messages ?? 0])
+    .map((key): [string, number] => {
+      const messages: unknown = breakdown[key]?.messages;
+      return [AGENT_NAMES[key], typeof messages === 'number' && Number.isFinite(messages) ? messages : 0];
+    })
     .filter(([, messages]) => messages > 0);
 }
 
