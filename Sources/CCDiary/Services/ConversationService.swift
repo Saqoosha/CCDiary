@@ -435,12 +435,7 @@ actor ConversationService {
         }
 
         let datePrefixes = Self.utcDatePrefixes(start: start, end: end)
-        // Session JSONLs are append-only, so a file last written before `start`
-        // cannot hold an entry inside [start, end). Skipping those by mtime
-        // avoids content-scanning every transcript ever written (15k+ files,
-        // 19 GB on the Mac Studio by 2026-11), which pushed the Claude Code
-        // reader past the 120 s per-source timeout. The hour of slack absorbs
-        // clock skew between an entry's timestamp and the file write.
+        // Append-only JSONLs: mtime >= newest entry, so older files can't hold [start, end). 1 h slack for copied mtimes.
         let modifiedSince = start.addingTimeInterval(-3600)
         var result: [String: [URL]] = [:]
 
