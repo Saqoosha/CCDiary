@@ -435,10 +435,13 @@ actor ConversationService {
         }
 
         let datePrefixes = Self.utcDatePrefixes(start: start, end: end)
+        // Append-only JSONLs: mtime >= newest entry, so older files can't hold [start, end). 1 h slack for copied mtimes.
+        let modifiedSince = start.addingTimeInterval(-3600)
         var result: [String: [URL]] = [:]
 
         for dir in projectDirs where dir.hasDirectoryPath {
-            let files = Self.filterAutomatedSessionFiles((try? Self.findJSONLFiles(in: dir)) ?? [])
+            let candidates = Self.filesModified(since: modifiedSince, in: (try? Self.findJSONLFiles(in: dir)) ?? [])
+            let files = Self.filterAutomatedSessionFiles(candidates)
             let matchingFiles = files.filter { Self.fileContainsAnyDatePrefix($0, datePrefixes: datePrefixes) }
             guard !matchingFiles.isEmpty else { continue }
 
@@ -1251,7 +1254,7 @@ actor ConversationService {
     private nonisolated static func findJSONLFiles(in directory: URL) throws -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
@@ -1262,6 +1265,18 @@ actor ConversationService {
             files.append(fileURL)
         }
         return files
+    }
+
+    /// Keeps files whose modification date is at or after `date`. A file whose
+    /// mtime cannot be read is kept, so an unreadable attribute never hides data.
+    private nonisolated static func filesModified(since date: Date, in files: [URL]) -> [URL] {
+        files.filter { file in
+            guard let modified = try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate else {
+                return true
+            }
+            return modified >= date
+        }
     }
 
     private nonisolated static func fileContainsAnyDatePrefix(
