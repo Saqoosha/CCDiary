@@ -164,7 +164,7 @@ function renderCards(stats: StatsResponse, sparks: CardSparks): string {
     { label: 'CURRENT STREAK', value: `${formatNumber(cards.current_streak.value)}d` },
     { label: 'LONGEST STREAK', value: `${formatNumber(cards.longest_streak.value)}d` },
     { label: 'PEAK HOUR', value: String(cards.peak_hour.value) },
-    { label: 'FAVORITE AI', value: titleCase(String(cards.favorite_provider.value)) },
+    { label: 'FAVORITE AI', value: String(cards.favorite_provider.value) },
   ];
 
   return items
@@ -359,11 +359,6 @@ function formatNumber(v: string | number): string {
 function formatDecimal(n: number, places: number): string {
   if (!Number.isFinite(n)) return String(n);
   return n.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places });
-}
-
-function titleCase(s: string): string {
-  if (!s || s === '—') return s;
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
 function fmt(n: number): string {
