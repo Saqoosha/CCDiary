@@ -88,8 +88,14 @@ private actor DateIndex {
 
     private func loadFromDisk() {
         guard FileManager.default.fileExists(atPath: Self.cacheFileURL.path),
-              let data = try? Data(contentsOf: Self.cacheFileURL),
-              let stored = try? JSONDecoder().decode(StoredDateIndex.self, from: data) else {
+              let data = try? Data(contentsOf: Self.cacheFileURL) else {
+            return
+        }
+        let stored: StoredDateIndex
+        do {
+            stored = try JSONDecoder().decode(StoredDateIndex.self, from: data)
+        } catch {
+            logger.error("Date index unreadable (\(data.count) bytes), rebuilding: \(error.localizedDescription)")
             return
         }
 
@@ -121,7 +127,7 @@ private actor DateIndex {
         let stored = StoredDateIndex(files: files)
         do {
             let data = try JSONEncoder().encode(stored)
-            try data.write(to: Self.cacheFileURL)
+            try data.write(to: Self.cacheFileURL, options: .atomic)
             logger.notice("Saved date index: \(files.count) files")
             return true
         } catch {
@@ -315,29 +321,40 @@ actor ConversationService {
         return false
     }
 
-    /// Extract all unique dates from a file (YYYY-MM-DD format)
-    private static func extractDatesFromFile(_ fileURL: URL) -> Set<String> {
-        guard let data = try? Data(contentsOf: fileURL),
-              let text = String(data: data, encoding: .utf8) else {
-            return []
-        }
+    /// UTC dates (`YYYY-MM-DD`) after every `"timestamp":"` in the file, scanned as bytes in
+    /// 1 MB chunks so invalid UTF-8 can't hide a file. Nil when the file can't be read.
+    private nonisolated static func extractDatesFromFile(_ fileURL: URL) -> Set<String>? {
+        guard let handle = FileHandle(forReadingAtPath: fileURL.path) else { return nil }
+        defer { try? handle.close() }
 
+        let needle = Data("\"timestamp\":\"".utf8)
+        let dateLength = 10
         var dates: Set<String> = []
-        let pattern = "\"timestamp\":\""
-
-        var searchStart = text.startIndex
-        while let range = text.range(of: pattern, range: searchStart..<text.endIndex) {
-            let dateStart = range.upperBound
-            if let dateEnd = text.index(dateStart, offsetBy: 10, limitedBy: text.endIndex) {
-                let dateStr = String(text[dateStart..<dateEnd])
-                // Validate it looks like a date (YYYY-MM-DD)
-                if dateStr.count == 10 && dateStr[dateStr.index(dateStr.startIndex, offsetBy: 4)] == "-" {
-                    dates.insert(dateStr)
-                }
+        var carry = Data()
+        while true {
+            let chunk: Data
+            do {
+                guard let read = try handle.read(upToCount: 1 << 20), !read.isEmpty else { break }
+                chunk = read
+            } catch {
+                return nil
             }
-            searchStart = range.upperBound
+            var data = carry
+            data.append(chunk)
+            var searchStart = data.startIndex
+            while let range = data.range(of: needle, in: searchStart..<data.endIndex) {
+                let dateEnd = range.upperBound + dateLength
+                guard dateEnd <= data.endIndex else { break }
+                let bytes = data[range.upperBound..<dateEnd]
+                if bytes[bytes.startIndex + 4] == UInt8(ascii: "-"),
+                   let date = String(bytes: bytes, encoding: .ascii) {
+                    dates.insert(date)
+                }
+                searchStart = range.upperBound
+            }
+            // Keep a needle split across chunks, or one whose date was cut off, for the next pass.
+            carry = Data(data.suffix(needle.count + dateLength))
         }
-
         return dates
     }
 
@@ -394,7 +411,10 @@ actor ConversationService {
                 group.addTask {
                     // Automated sessions are indexed with no dates so they're
                     // excluded from lookups but not re-probed until they change.
-                    let dates = Self.isAutomatedSessionFile(file) ? [] : Self.extractDatesFromFile(file)
+                    // Unreadable files stay unindexed so the next build retries them.
+                    guard let dates = Self.isAutomatedSessionFile(file) ? [] : Self.extractDatesFromFile(file) else {
+                        return nil
+                    }
                     return (file.path, modTime, dates)
                 }
             }
@@ -444,12 +464,18 @@ actor ConversationService {
         let datePrefixes = Self.utcDatePrefixes(start: start, end: end)
         // Append-only JSONLs: mtime >= newest entry, so older files can't hold [start, end). 1 h slack for copied mtimes.
         let modifiedSince = start.addingTimeInterval(-3600)
+        var automationVerdicts: [String: Bool] = [:]
         var result: [String: [URL]] = [:]
 
         for dir in projectDirs where dir.hasDirectoryPath {
             let candidates = Self.filesModified(since: modifiedSince, in: (try? Self.findJSONLFiles(in: dir)) ?? [])
             var matchingFiles: [URL] = []
-            for file in candidates where await !indexedDates(for: file).isDisjoint(with: datePrefixes) {
+            for file in candidates {
+                // nil = unreadable: keep it, as filesModified does for an unreadable mtime.
+                if let dates = await indexedDates(for: file, verdicts: &automationVerdicts),
+                   dates.isDisjoint(with: datePrefixes) {
+                    continue
+                }
                 matchingFiles.append(file)
             }
             guard !matchingFiles.isEmpty else { continue }
@@ -464,14 +490,22 @@ actor ConversationService {
     }
 
     /// UTC dates a file holds, from the date index when its mtime is unchanged; otherwise
-    /// scanned and indexed. Automated sessions index as [], matching buildFullDateIndex.
-    private func indexedDates(for file: URL) async -> Set<String> {
+    /// scanned and indexed. Automated sessions return [] uncached: a subagent's verdict comes
+    /// from its parent and can flip without the subagent's own mtime changing. Nil = unreadable.
+    private func indexedDates(for file: URL, verdicts: inout [String: Bool]) async -> Set<String>? {
         let modTime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate?.timeIntervalSince1970
         if let modTime, let dates = await dateIndex.dates(for: file.path, ifModTime: modTime) {
             return dates
         }
-        let dates = Self.isAutomatedSessionFile(file) ? [] : Self.extractDatesFromFile(file)
+        let probePath = Self.automationProbeTarget(for: file).path
+        let automated = verdicts[probePath] ?? Self.isAutomatedSession(atPath: probePath)
+        verdicts[probePath] = automated
+        if automated { return [] }
+        guard let dates = Self.extractDatesFromFile(file) else {
+            logger.error("Could not read \(file.path, privacy: .public) for its dates; keeping it as a candidate")
+            return nil
+        }
         if let modTime {
             await dateIndex.indexFile(file.path, modTime: modTime, dates: dates)
         }
