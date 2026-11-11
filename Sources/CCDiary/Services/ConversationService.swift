@@ -490,8 +490,8 @@ actor ConversationService {
     }
 
     /// UTC dates a file holds, from the date index when its mtime is unchanged; otherwise
-    /// scanned and indexed. Automated sessions return [] uncached: a subagent's verdict comes
-    /// from its parent and can flip without the subagent's own mtime changing. Nil = unreadable.
+    /// scanned and indexed. Automated subagents return [] uncached: their verdict comes from
+    /// the parent and can flip without their own mtime changing. Nil = unreadable.
     private func indexedDates(for file: URL, verdicts: inout [String: Bool]) async -> Set<String>? {
         let modTime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate?.timeIntervalSince1970
@@ -501,7 +501,12 @@ actor ConversationService {
         let probePath = Self.automationProbeTarget(for: file).path
         let automated = verdicts[probePath] ?? Self.isAutomatedSession(atPath: probePath)
         verdicts[probePath] = automated
-        if automated { return [] }
+        if automated {
+            if let modTime, probePath == file.path {
+                await dateIndex.indexFile(file.path, modTime: modTime, dates: [])
+            }
+            return []
+        }
         guard let dates = Self.extractDatesFromFile(file) else {
             logger.error("Could not read \(file.path, privacy: .public) for its dates; keeping it as a candidate")
             return nil
