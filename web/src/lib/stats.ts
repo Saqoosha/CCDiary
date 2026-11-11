@@ -1,4 +1,4 @@
-import type { DiaryRow } from './db';
+import type { DiaryRow, SourcesBreakdown } from './db';
 
 export type StatsRange = 'all' | '30d' | '7d';
 
@@ -47,24 +47,44 @@ export type StatsRow = Pick<
   | 'project_count'
   | 'peak_hour'
   | 'top_project'
-  | 'provider'
+  | 'sources_json'
 >;
 
 export async function loadStatsRows(db: D1Database, range: StatsRange): Promise<StatsRow[]> {
   const sql =
     range === 'all'
       ? `SELECT date, markdown, sessions, messages, active_minutes, project_count,
-                peak_hour, top_project, provider
+                peak_hour, top_project, sources_json
          FROM diaries
          ORDER BY date ASC`
       : `SELECT date, markdown, sessions, messages, active_minutes, project_count,
-                peak_hour, top_project, provider
+                peak_hour, top_project, sources_json
          FROM diaries
          WHERE date >= ?
          ORDER BY date ASC`;
   const stmt = range === 'all' ? db.prepare(sql) : db.prepare(sql).bind(rangeStart(range));
   const result = await stmt.all<StatsRow>();
   return result.results ?? [];
+}
+
+const AGENT_NAMES: Record<keyof SourcesBreakdown, string> = {
+  claudeCode: 'Claude Code',
+  cursor: 'Cursor',
+  codex: 'Codex',
+};
+
+function sourceMessages(row: StatsRow): [string, number][] {
+  if (!row.sources_json) return [];
+  let sources: SourcesBreakdown;
+  try {
+    sources = JSON.parse(row.sources_json) as SourcesBreakdown;
+  } catch {
+    console.warn(`stats: unparseable sources_json for ${row.date}`);
+    return [];
+  }
+  return (Object.keys(AGENT_NAMES) as (keyof SourcesBreakdown)[])
+    .map((key): [string, number] => [AGENT_NAMES[key], sources[key]?.messages ?? 0])
+    .filter(([, messages]) => messages > 0);
 }
 
 export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
@@ -76,7 +96,7 @@ export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
   };
   const peakHourCounts = new Array<number>(24).fill(0);
   const projectCounts = new Map<string, number>();
-  const providerCounts = new Map<string, number>();
+  const agentMessages = new Map<string, number>();
 
   for (const row of rows) {
     totals.sessions += row.sessions;
@@ -90,8 +110,8 @@ export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
     if (row.top_project) {
       projectCounts.set(row.top_project, (projectCounts.get(row.top_project) ?? 0) + Math.max(row.messages, 1));
     }
-    if (row.provider) {
-      providerCounts.set(row.provider, (providerCounts.get(row.provider) ?? 0) + 1);
+    for (const [agent, messages] of sourceMessages(row)) {
+      agentMessages.set(agent, (agentMessages.get(agent) ?? 0) + messages);
     }
   }
 
@@ -100,7 +120,8 @@ export function buildStats(rows: StatsRow[], range: StatsRange): StatsResponse {
 
   const peakHour = argmax(peakHourCounts);
   const topProject = argmaxMap(projectCounts);
-  const favoriteProvider = argmaxMap(providerCounts);
+  // The coding agent with the most messages, not the AI that wrote the diaries.
+  const favoriteProvider = argmaxMap(agentMessages);
 
   return {
     range,
